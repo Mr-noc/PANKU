@@ -262,40 +262,73 @@
   function setupDetector() {
     st.det = null;
     st.reader = null;
+    st.frameN = 0;
     if (!window.ZXing) return;
     try {
-      const hints = new Map();
-      hints.set(ZXing.DecodeHintType.POSSIBLE_FORMATS, [
-        ZXing.BarcodeFormat.EAN_13, ZXing.BarcodeFormat.EAN_8,
-        ZXing.BarcodeFormat.UPC_A, ZXing.BarcodeFormat.UPC_E,
-        ZXing.BarcodeFormat.CODE_128, ZXing.BarcodeFormat.CODE_39,
-        ZXing.BarcodeFormat.ITF, ZXing.BarcodeFormat.QR_CODE,
-        ZXing.BarcodeFormat.CODABAR,
-      ]);
-      hints.set(ZXing.DecodeHintType.TRY_HARDER, false);
       st.reader = new ZXing.MultiFormatReader();
-      st.reader.setHints(hints);
+      st.reader.setHints(makeHints(false));
       st.canvas = st.canvas || document.createElement('canvas');
     } catch (e) { console.warn('ZXing init', e); }
   }
 
+  function decodeCanvas(c, harder) {
+    if (!st.reader) return null;
+    try {
+      const ctx = c.getContext('2d', { willReadFrequently: true });
+      const img = ctx.getImageData(0, 0, c.width, c.height);
+      const lum = new ZXing.RGBLuminanceSource(img.data, c.width, c.height);
+      const bmp = new ZXing.BinaryBitmap(new ZXing.HybridBinarizer(lum));
+      st.reader.setHints(makeHints(!!harder));
+      const res = st.reader.decode(bmp);
+      return res && res.getText ? res.getText() : null;
+    } catch (e) { return null; }
+  }
+  function makeHints(harder) {
+    const hints = new Map();
+    hints.set(ZXing.DecodeHintType.POSSIBLE_FORMATS, [
+      ZXing.BarcodeFormat.EAN_13, ZXing.BarcodeFormat.EAN_8,
+      ZXing.BarcodeFormat.UPC_A, ZXing.BarcodeFormat.UPC_E,
+      ZXing.BarcodeFormat.CODE_128, ZXing.BarcodeFormat.CODE_39,
+      ZXing.BarcodeFormat.ITF, ZXing.BarcodeFormat.QR_CODE,
+      ZXing.BarcodeFormat.CODABAR,
+    ]);
+    hints.set(ZXing.DecodeHintType.TRY_HARDER, !!harder);
+    return hints;
+  }
   function zxingScan() {
     const v = st.video;
     if (!v || !v.videoWidth || !st.reader) return;
-    const maxW = 960;
-    const scale = Math.min(1, maxW / v.videoWidth);
-    const w = Math.round(v.videoWidth * scale), h = Math.round(v.videoHeight * scale);
+    const vw = v.videoWidth, vh = v.videoHeight;
+    st.frames = (st.frames || 0) + 1;
     const c = st.canvas;
-    c.width = w; c.height = h;
+    // 先解中间取景框：按原始像素裁切，避免缩糊
+    const rw = Math.round(vw * 0.8), rh = Math.round(vh * 0.42);
+    const rx = Math.round((vw - rw) / 2), ry = Math.round((vh - rh) / 2);
+    const scale = Math.min(1, 1100 / rw);
+    c.width = Math.max(2, Math.round(rw * scale));
+    c.height = Math.max(2, Math.round(rh * scale));
     const ctx = c.getContext('2d', { willReadFrequently: true });
-    ctx.drawImage(v, 0, 0, w, h);
-    const img = ctx.getImageData(0, 0, w, h);
-    try {
-      const lum = new ZXing.RGBLuminanceSource(img.data, w, h);
-      const bmp = new ZXing.BinaryBitmap(new ZXing.HybridBinarizer(lum));
-      const res = st.reader.decode(bmp);
-      if (res && res.getText) onCode(res.getText());
-    } catch (e) { /* 没扫到是常态 */ }
+    ctx.drawImage(v, rx, ry, rw, rh, 0, 0, c.width, c.height);
+    let code = decodeCanvas(c, true);
+    if (code) { st.hits = (st.hits || 0) + 1; return onCode(code); }
+    // 竖着拿手机时条码是横向的，转 90° 再试
+    if (st.frames % 2 === 0) {
+      code = decodeCanvas(rotateCanvas(c, 90), true);
+      if (code) { st.hits = (st.hits || 0) + 1; return onCode(code); }
+    }
+    // 每 6 帧整幅兜底
+    if (st.frames % 6 === 0) {
+      const s2 = Math.min(1, 900 / vw);
+      c.width = Math.round(vw * s2);
+      c.height = Math.round(vh * s2);
+      ctx.drawImage(v, 0, 0, c.width, c.height);
+      code = decodeCanvas(c, true);
+      if (code) { st.hits = (st.hits || 0) + 1; onCode(code); }
+    }
+    const dbg = document.getElementById('scanDebug');
+    if (dbg && st.frames % 6 === 0) {
+      dbg.textContent = vw + '×' + vh + ' · 帧 ' + st.frames + ' · 命中 ' + (st.hits || 0);
+    }
   }
 
   function loop() {
@@ -305,7 +338,7 @@
       if (!st.paused && st.video && st.video.readyState >= 2 && st.video.videoWidth) {
         if (st.reader) zxingScan();
       }
-      st.timer = setTimeout(step, 200);
+      st.timer = setTimeout(step, 280);
     };
     clearTimeout(st.timer);
     step();
@@ -654,6 +687,13 @@
         torch.style.color = st.torchOn ? '#fbbf24' : '';
       } catch (e) { A.toast('这个摄像头不支持手电', 'bad'); }
     };
+    if (/[?&]debug=1/.test(location.search)) {
+      const dbg = document.createElement('div');
+      dbg.id = 'scanDebug';
+      dbg.style.cssText = 'position:absolute;left:8px;bottom:34px;z-index:5;font-size:10px;color:#9fb3c8;background:rgba(0,0,0,.55);padding:3px 6px;border-radius:6px';
+      dbg.textContent = '等待相机…';
+      container.querySelector('#camBox').appendChild(dbg);
+    }
     st.mounted = true;
     start();
   };

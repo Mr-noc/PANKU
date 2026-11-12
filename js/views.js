@@ -691,7 +691,7 @@
       '<div class="row"><div class="grow"><div class="nm">保持屏幕常亮</div><div class="meta">扫码时不让屏幕熄灭</div></div><label class="switch"><input type="checkbox" data-s="wake"' + (s.wake ? ' checked' : '') + '></label></div>' +
       '</div>' +
       '<div class="hint" style="margin-top:12px">设置只影响这台手机上的浏览器。</div>' +
-      '<div class="hint" style="margin-top:6px;opacity:.7">版本 1.3 · 门店版</div>' +
+      '<div class="hint" style="margin-top:6px;opacity:.7">版本 1.4 · 门店版</div>' +
       '<button class="btn block" id="hardFix" style="margin-top:14px">修复加载 / 强制更新</button>' +
       '<div class="hint" style="margin-top:8px">导入没反应、界面没更新时点它：会清掉旧缓存并重新加载，已盘数据不受影响。</div>';
     A.sheet({ title: '设置', body: body, onMount: function (b) {

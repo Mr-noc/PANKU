@@ -229,7 +229,91 @@
     return html;
   }
 
+  function storeBlockHTML() {
+    const stores = storeValues();
+    if (S.map.store == null || stores.length < 2) return '';
+    return '<div class="sec-title">门店</div>' +
+      '<div class="field"><label>只盘这个门店（可选）</label>' +
+      '<select class="inp" id="wStore">' +
+      '<option value="">全部门店（' + stores.length + ' 家）</option>' +
+      stores.map((v) => '<option value="' + A.esc(v) + '"' + (S.store === v ? ' selected' : '') + '>' + A.esc(v) + '</option>').join('') +
+      '</select></div>' +
+      '<div class="hint" style="margin-top:6px">每个店员选自己的门店，导入后只保留本店商品；不选则整张表都导入。</div>';
+  }
+
+  function previewSimple() {
+    const cols = [];
+    if (S.map.store != null) cols.push(['store', '门店']);
+    if (S.map.code != null) cols.push(['code', '商品编码']);
+    cols.push(['name', '商品名称']);
+    if (S.map.book != null) cols.push(['book', '数量']);
+    if (S.map.loc != null) cols.push(['loc', '仓库']);
+    if (S.map.barcode != null) cols.push(['barcode', '69码']);
+    let html = '<div style="overflow:auto;background:var(--card);border:1px solid var(--line);border-radius:12px"><table style="width:100%;border-collapse:collapse;font-size:12px;white-space:nowrap">';
+    html += '<tr>' + cols.map((c) => '<th style="text-align:left;padding:7px 9px;color:var(--tx3);font-weight:600;border-bottom:1px solid var(--line)">' + c[1] + '</th>').join('') + '</tr>';
+    let shown = 0;
+    const start = S.headerRow < 0 ? 0 : S.headerRow + 1;
+    for (let r = start; r < S.rows.length && shown < 6; r++) {
+      const row = S.rows[r] || [];
+      if (!row.some((c) => String(c || '').trim() !== '')) continue;
+      if (S.store && S.map.store != null && textCell(row[S.map.store]) !== S.store) continue;
+      html += '<tr>' + cols.map(function (c) {
+        let v = row[S.map[c[0]]];
+        if (c[0] === 'book') v = A.fmt(A.num(v));
+        else if (c[0] === 'barcode') v = A.extractCodes(v).filter((x) => /^\d{8,14}$/.test(x)).join(' / ');
+        else v = textCell(v);
+        return '<td style="padding:6px 9px;border-bottom:1px solid rgba(37,49,64,.5);max-width:140px;overflow:hidden;text-overflow:ellipsis">' + A.esc(v == null ? '' : v) + '</td>';
+      }).join('') + '</tr>';
+      shown++;
+    }
+    return html + '</table></div>';
+  }
+
   function renderWizard() {
+    const simple = !S.advanced && S.map.name != null && (S.map.barcode != null || S.map.code != null) && S.map.book != null;
+    if (!simple) return renderWizardAdvanced();
+    const prev = countPreview();
+    const row = function (label, key) {
+      const ci = S.map[key];
+      const head = ci != null ? textCell((S.rows[S.headerRow] || [])[ci]) : '';
+      const sample = ci != null ? textCell(((S.rows[S.headerRow + 1] || [])[ci])) : '';
+      return '<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;padding:8px 0;border-bottom:1px solid rgba(37,49,64,.5)">' +
+        '<span style="color:var(--tx3);font-size:12.5px">' + label + '</span>' +
+        '<span style="font-size:13px;max-width:62%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' +
+        (ci != null ? A.esc(head || sample || ('第 ' + (ci + 1) + ' 列')) : '<i style="color:var(--tx3)">没有这一列，跳过</i>') + '</span></div>';
+    };
+    const body =
+      '<div class="note" style="margin-bottom:12px">已自动识别表格，只读下面这几列，直接导入就行。不对再点最下面「手动调整」。</div>' +
+      '<div class="card" style="padding:2px 14px">' +
+      row('门店', 'store') + row('商品编码', 'code') + row('商品全称', 'name') +
+      row('数量', 'book') + row('仓库', 'loc') +
+      (S.map.barcode != null ? row('69 码', 'barcode') : '') +
+      '</div>' +
+      storeBlockHTML() +
+      '<div class="sec-title">预览</div>' +
+      '<div id="wPreview">' + previewSimple() + '</div>' +
+      '<div class="note" id="wCount" style="margin-top:12px">将导入 <b>' + prev.n + '</b> 个商品，其中 <b>' + prev.noCode + '</b> 个没有 69 码。</div>' +
+      '<button class="btn primary block lg" id="wGo" style="margin-top:14px">导入 ' + prev.n + ' 个商品</button>' +
+      '<div style="text-align:center;margin-top:10px"><button class="btn sm ghost" id="wAdv">列识别不对？手动调整</button></div>';
+    const page = A.page({ title: '导入 · ' + (S.fileName || '').slice(0, 18), body: body });
+    S.page = page;
+    const root = page.body;
+    const refresh = function () {
+      const pv = countPreview();
+      const pvEl = $('#wPreview', root);
+      if (pvEl) pvEl.innerHTML = previewSimple();
+      const cEl = $('#wCount', root);
+      if (cEl) cEl.innerHTML = '将导入 <b>' + pv.n + '</b> 个商品，其中 <b>' + pv.noCode + '</b> 个没有 69 码。';
+      const go = $('#wGo', root);
+      if (go) { go.textContent = '导入 ' + pv.n + ' 个商品'; go.disabled = pv.n === 0; }
+    };
+    const stSel = $('#wStore', root);
+    if (stSel) stSel.onchange = function () { S.store = stSel.value; refresh(); };
+    $('#wGo', root).onclick = doImport;
+    $('#wAdv', root).onclick = function () { S.advanced = true; renderWizard(); };
+  }
+
+  function renderWizardAdvanced() {
     const prev = countPreview();
     const sheetNames = S.wb.SheetNames;
     const mapControls = FIELDS.map(function (f) {
@@ -250,16 +334,7 @@
     }
     headOpts += '<option value="-1"' + (S.headerRow < 0 ? ' selected' : '') + '>没有表头，全部当数据</option>';
 
-    const stores = storeValues();
-    const storeBlock = (S.map.store != null && stores.length > 1) ? (
-      '<div class="sec-title">门店</div>' +
-      '<div class="field"><label>只盘这个门店（可选）</label>' +
-      '<select class="inp" id="wStore">' +
-      '<option value="">全部门店（' + stores.length + ' 家）</option>' +
-      stores.map((v) => '<option value="' + A.esc(v) + '"' + (S.store === v ? ' selected' : '') + '>' + A.esc(v) + '</option>').join('') +
-      '</select></div>' +
-      '<div class="hint" style="margin-top:6px">每个店员选自己的门店，导入后只保留本店商品；不选则整张表都导入。</div>'
-    ) : '';
+    const storeBlock = storeBlockHTML();
 
     const modeBlock = A.state.session ? (
       '<div class="sec-title">导入方式</div>' +
@@ -283,6 +358,7 @@
       '<div id="wPreview">' + previewHTML() + '</div>' +
       '<div class="note" style="margin-top:14px" id="wCount">将导入 <b>' + prev.n + '</b> 个商品，其中 <b>' + prev.noCode + '</b> 个没有条码（走无码流程）。</div>' +
       '<button class="btn primary block lg" id="wGo" style="margin-top:14px">导入 ' + prev.n + ' 个商品</button>' +
+      '<div style="text-align:center;margin-top:10px"><button class="btn sm ghost" id="wAdvBack">返回简易模式</button></div>' +
       '<div style="height:10px"></div>';
 
     const page = A.page({ title: '导入清单 · ' + (S.fileName || '').slice(0, 18), body: body });
@@ -320,6 +396,8 @@
       r.onchange = function () { S.mode = r.value; };
     });
     $('#wGo').onclick = doImport;
+    const back = $('#wAdvBack', root);
+    if (back) back.onclick = function () { S.advanced = false; renderWizard(); };
   }
 
   async function doImport() {
@@ -416,6 +494,7 @@
       S.wb = wb;
       S.fileName = f.name || '清单';
       S.store = '';
+      S.advanced = false;
       loadSheet(wb.SheetNames[0]);
       renderWizard();
     } catch (e) {
