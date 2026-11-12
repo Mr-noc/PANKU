@@ -575,7 +575,7 @@
     ctx.drawImage(src, -src.width / 2, -src.height / 2);
     return c;
   }
-  function zxingFromCanvas(canvas) {
+  function zxingFromCanvas(canvas, throwErr) {
     if (!window.ZXing) return null;
     try {
       const ctx = canvas.getContext('2d', { willReadFrequently: true });
@@ -595,7 +595,7 @@
       reader.setHints(hints);
       const res = reader.decode(bmp);
       return res && res.getText ? res.getText() : null;
-    } catch (e) { return null; }
+    } catch (e) { if (throwErr) throw e; return null; }
   }
   async function decodeImageFile(file) {
     const url = URL.createObjectURL(file);
@@ -682,6 +682,61 @@
     } catch (e) {}
     grabBusy = false;
   }
+
+  A.decodeDiag = async function () {
+    const lines = [];
+    const add = function (t) { lines.push(t); };
+    add('浏览器：' + navigator.userAgent.slice(0, 90));
+    add('安全环境：' + (window.isSecureContext ? '是' : '否'));
+    add('ZXing：' + (window.ZXing ? '已加载' : '未加载'));
+    add('BarcodeDetector：' + ('BarcodeDetector' in window ? '支持' : '不支持'));
+    add('ImageCapture：' + ('ImageCapture' in window ? '支持' : '不支持'));
+    try {
+      const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+      JsBarcode(svg, '6901234567892', { format: 'EAN13', width: 4, height: 140, displayValue: false, margin: 12 });
+      add('生成测试条码：OK');
+      const blob = new Blob([new XMLSerializer().serializeToString(svg)], { type: 'image/svg+xml' });
+      const url = URL.createObjectURL(blob);
+      const img = await new Promise(function (res, rej) {
+        const i = new Image();
+        i.onload = function () { res(i); };
+        i.onerror = rej;
+        i.src = url;
+      });
+      add('加载图片：OK ' + img.width + '×' + img.height);
+      const c = document.createElement('canvas');
+      c.width = img.width; c.height = img.height;
+      c.getContext('2d').drawImage(img, 0, 0);
+      add('绘制画布：OK');
+      let okPix = false;
+      try {
+        c.getContext('2d').getImageData(0, 0, c.width, c.height);
+        okPix = true;
+        add('读取像素：OK');
+      } catch (e) { add('读取像素：失败 ' + (e.name || e.message)); }
+      if (okPix && window.ZXing) {
+        try {
+          const r = zxingFromCanvas(c, true);
+          add('ZXing 解码：' + (r || '无结果'));
+        } catch (e) { add('ZXing 解码异常：' + (e.name || e.message)); }
+      }
+    } catch (e) { add('测试条码流程异常：' + (e.name || e.message)); }
+    if (st.video && st.video.videoWidth) {
+      add('相机画面：' + st.video.videoWidth + '×' + st.video.videoHeight);
+      const c2 = document.createElement('canvas');
+      c2.width = 320; c2.height = 240;
+      c2.getContext('2d').drawImage(st.video, 0, 0, 320, 240);
+      try {
+        const d = c2.getContext('2d').getImageData(0, 0, 320, 240).data;
+        let sum = 0;
+        for (let i = 0; i < d.length; i += 40) sum += d[i];
+        add('视频取帧：OK，平均亮度 ' + Math.round(sum / (d.length / 40)));
+      } catch (e) { add('视频取帧：失败 ' + (e.name || e.message)); }
+    } else {
+      add('相机画面：未启动');
+    }
+    A.sheet({ title: '识别诊断', body: '<pre style="white-space:pre-wrap;font-size:11.5px;line-height:1.75;color:var(--tx2);margin:0">' + A.esc(lines.join('\n')) + '</pre>' });
+  };
 
   A.decodeSelfTest = async function () {
     try {
