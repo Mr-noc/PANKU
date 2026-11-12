@@ -259,12 +259,15 @@
         return (a.name || '') < (b.name || '') ? -1 : 1;
       });
       const shown = items.slice(0, limit);
-      box.innerHTML = '<div class="rows">' + shown.map(function (it) {
+      const cfCount = S.session.items.filter((x) => x.mergeConflict).length;
+      const cfBanner = cfCount ? '<button class="note warn" data-act="conflicts" style="width:100%;text-align:left;margin-bottom:10px">有 ' + cfCount + ' 个商品多人盘的数量不一致，点此核对 ›</button>' : '';
+      box.innerHTML = cfBanner + '<div class="rows">' + shown.map(function (it) {
         const cnt = it.count == null ? '—' : A.fmt(it.count);
         const diff = A.isDiff(it);
         return '<div class="row" data-open="' + it.id + '">' +
           '<div class="grow"><div class="nm">' + A.esc(it.name || '未命名') +
-          (A.needManual(it) ? '<span class="badge gray">无69</span>' : '') + '</div>' +
+          (A.needManual(it) ? '<span class="badge gray">无69</span>' : '') +
+          (it.mergeConflict ? '<span class="badge bad">待核对</span>' : '') + '</div>' +
           '<div class="meta">' + (it.barcodes && it.barcodes.length ? A.esc(it.barcodes[0]) : '—') +
           (it.spec ? '<span class="sep">·</span>' + A.esc(it.spec) : '') +
           (it.loc ? '<span class="sep">·</span>位 ' + A.esc(it.loc) : '') + '</div></div>' +
@@ -285,6 +288,7 @@
   function viewStats(v) {
     const st = A.stats();
     const pct = st.total ? Math.round((st.counted / st.total) * 100) : 0;
+    const cfCount = S.session.items.filter((x) => x.mergeConflict).length;
     const diffs = S.session.items.filter(A.isDiff).sort(function (a, b) {
       return Math.abs(b.count - (b.book == null ? 0 : b.book)) - Math.abs(a.count - (a.book == null ? 0 : a.book));
     });
@@ -295,6 +299,7 @@
       '<div class="metric"><div class="m-lab">实盘合计</div><div class="m-val">' + A.fmt(st.real) + '</div><div class="m-sub">账面合计 ' + A.fmt(st.book) + '</div></div>' +
       '<div class="metric"><div class="m-lab">无69 / 清单外码</div><div class="m-val ' + (st.unknown ? 'bad' : '') + '">' + st.noCode + '<span style="font-size:15px;color:var(--tx3);font-weight:600"> / ' + st.unknown + '</span></div><div class="m-sub">无69商品 · 待处理条码</div></div>' +
       '</div>' +
+      (cfCount ? '<button class="note warn" data-act="conflicts" style="width:100%;text-align:left;margin-top:12px">有 ' + cfCount + ' 个商品多人盘的数量不一致，点此核对 ›</button>' : '') +
       '<div class="btn-row" style="margin-top:12px">' +
       '<button class="btn primary" data-act="export">' + A.icon('download') + ' 导出 Excel</button>' +
       '<button class="btn" data-act="print-labels">' + A.icon('print') + ' 打印无69标签</button>' +
@@ -385,6 +390,8 @@
       (it.photo ? '<button data-ph="del">删除</button>' : '') + '</div>' +
       '<input type="file" accept="image/*" capture="environment" id="phInput" hidden>' +
       '</div>' +
+      (it.mergeConflict ? '<div class="note warn" style="margin-bottom:10px">多人数量不一致：' +
+        it.mergeConflict.map((v) => A.esc(v.device) + ' ' + A.fmt(v.count)).join('　') + '，请核对后填写正确数量。</div>' : '') +
       '<div class="statline">' +
       '<div class="sl"><div class="k">账面</div><div class="v" id="dBook">' + (it.book == null ? '—' : A.fmt(it.book)) + '</div></div>' +
       '<div class="sl"><div class="k">实盘</div><div class="v" id="dReal" style="color:var(--acc)">' + cnt() + '</div></div>' +
@@ -656,7 +663,8 @@
       '<div class="rows">' +
       row('tasks', 'list', '盘点任务', '切换 / 新建 / 删除') +
       row('import', 'upload', '导入另一张清单', '追加或新建') +
-      row('export', 'download', '导出盘点结果', 'Excel / CSV') +
+      row('merge', 'download', '合并多台手机的结果', '汇总其他店员的交接文件') +
+      row('export', 'download', '导出盘点结果', 'Excel / CSV / 交接文件') +
       row('labels', 'print', '打印无69商品标签', '生成内部码，贴到商品上') +
       row('help', 'warn', '使用说明', '3 分钟上手') +
       row('settings', 'edit', '设置', '声音 / 震动 / 防连扫') +
@@ -671,6 +679,7 @@
             if (m === 'tasks') A.openSessions();
             else if (m === 'import') A.openImport();
             else if (m === 'export') A.openExport();
+            else if (m === 'merge') A.openMerge();
             else if (m === 'labels') A.printLabels(null);
             else if (m === 'help') A.openHelp();
             else if (m === 'settings') A.openSettings();
@@ -691,7 +700,7 @@
       '<div class="row"><div class="grow"><div class="nm">保持屏幕常亮</div><div class="meta">扫码时不让屏幕熄灭</div></div><label class="switch"><input type="checkbox" data-s="wake"' + (s.wake ? ' checked' : '') + '></label></div>' +
       '</div>' +
       '<div class="hint" style="margin-top:12px">设置只影响这台手机上的浏览器。</div>' +
-      '<div class="hint" style="margin-top:6px;opacity:.7">版本 1.8 · 门店版</div>' +
+      '<div class="hint" style="margin-top:6px;opacity:.7">版本 1.9 · 合并版</div>' +
       '<button class="btn block" id="selfTest" style="margin-top:14px">识别自检（不用相机）</button>' +
       '<div class="hint" id="engineInfo" style="margin-top:8px"></div>' +
       '<button class="btn block" id="hardFix" style="margin-top:10px">修复加载 / 强制更新</button>' +
@@ -860,6 +869,8 @@
       '<div class="rows">' +
       '<div class="row" data-x="xlsx"><span style="color:var(--acc);width:20px;display:grid;place-items:center">' + A.icon('download') + '</span><div class="grow"><div class="nm">Excel（.xlsx）</div><div class="meta">3 个工作表，可直接发微信</div></div><span style="color:var(--tx3)">›</span></div>' +
       '<div class="row" data-x="csv"><span style="color:var(--tx2);width:20px;display:grid;place-items:center">' + A.icon('list') + '</span><div class="grow"><div class="nm">CSV（.csv）</div><div class="meta">通用格式，表格软件都能开</div></div><span style="color:var(--tx3)">›</span></div>' +
+      '<div class="row" data-x="handover"><span style="color:var(--warn);width:20px;display:grid;place-items:center">' + A.icon('upload') + '</span><div class="grow"><div class="nm">导出交接文件（.json）</div><div class="meta">给店长汇总用，只有条码和数量</div></div><span style="color:var(--tx3)">›</span></div>' +
+      '<div class="row" data-x="merge"><span style="color:var(--acc);width:20px;display:grid;place-items:center">' + A.icon('download') + '</span><div class="grow"><div class="nm">合并多台手机的结果</div><div class="meta">选多个交接文件，自动比对数量</div></div><span style="color:var(--tx3)">›</span></div>' +
       '</div>' +
       '<div class="hint" style="margin-top:12px">当前 ' + st.total + ' 个品项，已盘 ' + st.counted + '，差异 ' + st.diff + '。</div>';
     A.sheet({ title: '导出结果', body: body, onMount: function (b) {
@@ -867,7 +878,12 @@
         row.onclick = function () {
           const k = row.getAttribute('data-x');
           A.closeSheet();
-          setTimeout(function () { k === 'csv' ? A.exportCSV() : A.exportXLSX(); }, 160);
+          setTimeout(function () {
+            if (k === 'csv') A.exportCSV();
+            else if (k === 'handover') A.exportHandover();
+            else if (k === 'merge') A.openMerge();
+            else A.exportXLSX();
+          }, 160);
         };
       });
     } });
