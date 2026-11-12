@@ -262,73 +262,52 @@
   function setupDetector() {
     st.det = null;
     st.reader = null;
-    st.frameN = 0;
-    if (!window.ZXing) return;
-    try {
-      st.reader = new ZXing.MultiFormatReader();
-      st.reader.setHints(makeHints(false));
-      st.canvas = st.canvas || document.createElement('canvas');
-    } catch (e) { console.warn('ZXing init', e); }
+    st.detMiss = 0;
+    const wanted = ['ean_13', 'ean_8', 'code_128', 'code_39', 'code_93', 'upc_a', 'upc_e', 'itf', 'qr_code', 'codabar', 'data_matrix'];
+    if ('BarcodeDetector' in window) {
+      try {
+        const supported = (BarcodeDetector.getSupportedFormats ? BarcodeDetector.getSupportedFormats() : Promise.resolve(wanted));
+        Promise.resolve(supported).then(function (fmts) {
+          const use = wanted.filter((f) => fmts.indexOf(f) >= 0);
+          if (use.length) st.det = new BarcodeDetector({ formats: use });
+        }).catch(function () {});
+      } catch (e) {}
+    }
+    if (window.ZXing) {
+      try {
+        const hints = new Map();
+        hints.set(ZXing.DecodeHintType.POSSIBLE_FORMATS, [
+          ZXing.BarcodeFormat.EAN_13, ZXing.BarcodeFormat.EAN_8,
+          ZXing.BarcodeFormat.UPC_A, ZXing.BarcodeFormat.UPC_E,
+          ZXing.BarcodeFormat.CODE_128, ZXing.BarcodeFormat.CODE_39,
+          ZXing.BarcodeFormat.ITF, ZXing.BarcodeFormat.QR_CODE,
+          ZXing.BarcodeFormat.CODABAR,
+        ]);
+        hints.set(ZXing.DecodeHintType.TRY_HARDER, false);
+        st.reader = new ZXing.MultiFormatReader();
+        st.reader.setHints(hints);
+        st.canvas = st.canvas || document.createElement('canvas');
+      } catch (e) { console.warn('ZXing init', e); }
+    }
   }
 
-  function decodeCanvas(c, harder) {
-    if (!st.reader) return null;
-    try {
-      const ctx = c.getContext('2d', { willReadFrequently: true });
-      const img = ctx.getImageData(0, 0, c.width, c.height);
-      const lum = new ZXing.RGBLuminanceSource(img.data, c.width, c.height);
-      const bmp = new ZXing.BinaryBitmap(new ZXing.HybridBinarizer(lum));
-      st.reader.setHints(makeHints(!!harder));
-      const res = st.reader.decode(bmp);
-      return res && res.getText ? res.getText() : null;
-    } catch (e) { return null; }
-  }
-  function makeHints(harder) {
-    const hints = new Map();
-    hints.set(ZXing.DecodeHintType.POSSIBLE_FORMATS, [
-      ZXing.BarcodeFormat.EAN_13, ZXing.BarcodeFormat.EAN_8,
-      ZXing.BarcodeFormat.UPC_A, ZXing.BarcodeFormat.UPC_E,
-      ZXing.BarcodeFormat.CODE_128, ZXing.BarcodeFormat.CODE_39,
-      ZXing.BarcodeFormat.ITF, ZXing.BarcodeFormat.QR_CODE,
-      ZXing.BarcodeFormat.CODABAR,
-    ]);
-    hints.set(ZXing.DecodeHintType.TRY_HARDER, !!harder);
-    return hints;
-  }
   function zxingScan() {
     const v = st.video;
     if (!v || !v.videoWidth || !st.reader) return;
-    const vw = v.videoWidth, vh = v.videoHeight;
-    st.frames = (st.frames || 0) + 1;
+    const maxW = 800;
+    const scale = Math.min(1, maxW / v.videoWidth);
+    const w = Math.round(v.videoWidth * scale), h = Math.round(v.videoHeight * scale);
     const c = st.canvas;
-    // 先解中间取景框：按原始像素裁切，避免缩糊
-    const rw = Math.round(vw * 0.8), rh = Math.round(vh * 0.42);
-    const rx = Math.round((vw - rw) / 2), ry = Math.round((vh - rh) / 2);
-    const scale = Math.min(1, 1100 / rw);
-    c.width = Math.max(2, Math.round(rw * scale));
-    c.height = Math.max(2, Math.round(rh * scale));
+    c.width = w; c.height = h;
     const ctx = c.getContext('2d', { willReadFrequently: true });
-    ctx.drawImage(v, rx, ry, rw, rh, 0, 0, c.width, c.height);
-    let code = decodeCanvas(c, true);
-    if (code) { st.hits = (st.hits || 0) + 1; return onCode(code); }
-    // 竖着拿手机时条码是横向的，转 90° 再试
-    if (st.frames % 2 === 0) {
-      code = decodeCanvas(rotateCanvas(c, 90), true);
-      if (code) { st.hits = (st.hits || 0) + 1; return onCode(code); }
-    }
-    // 每 6 帧整幅兜底
-    if (st.frames % 6 === 0) {
-      const s2 = Math.min(1, 900 / vw);
-      c.width = Math.round(vw * s2);
-      c.height = Math.round(vh * s2);
-      ctx.drawImage(v, 0, 0, c.width, c.height);
-      code = decodeCanvas(c, true);
-      if (code) { st.hits = (st.hits || 0) + 1; onCode(code); }
-    }
-    const dbg = document.getElementById('scanDebug');
-    if (dbg && st.frames % 6 === 0) {
-      dbg.textContent = vw + '×' + vh + ' · 帧 ' + st.frames + ' · 命中 ' + (st.hits || 0);
-    }
+    ctx.drawImage(v, 0, 0, w, h);
+    const img = ctx.getImageData(0, 0, w, h);
+    try {
+      const lum = new ZXing.RGBLuminanceSource(img.data, w, h);
+      const bmp = new ZXing.BinaryBitmap(new ZXing.HybridBinarizer(lum));
+      const res = st.reader.decode(bmp);
+      if (res && res.getText) onCode(res.getText());
+    } catch (e) { /* 没扫到是常态 */ }
   }
 
   function loop() {
@@ -336,206 +315,29 @@
     const step = function () {
       if (!st.running) return;
       if (!st.paused && st.video && st.video.readyState >= 2 && st.video.videoWidth) {
-        if (st.reader) zxingScan();
+        if (st.det) {
+          st.det.detect(st.video).then(function (codes) {
+            if (codes && codes.length) {
+              st.detMiss = 0;
+              onCode(codes[0].rawValue);
+            } else {
+              st.detMiss = (st.detMiss || 0) + 1;
+              // 浏览器自带的检测器一直没结果时，回退到 ZXing
+              if (st.detMiss > 14) st.det = null;
+            }
+          }).catch(function () {
+            st.detMiss = (st.detMiss || 0) + 1;
+            if (st.detMiss > 6) st.det = null;
+          });
+        } else if (st.reader) {
+          zxingScan();
+        }
       }
-      st.timer = setTimeout(step, 280);
+      st.timer = setTimeout(step, st.det ? 140 : 240);
     };
     clearTimeout(st.timer);
     step();
   }
-
-  async function keepAwake() {
-    if (!S.settings.wake || !('wakeLock' in navigator)) return;
-    try {
-      st.wake = await navigator.wakeLock.request('screen');
-      st.wake.addEventListener('release', function () { st.wake = null; });
-    } catch (e) {}
-  }
-
-  /* ---------- 识别结果 ---------- */
-  function flash() {
-    const f = $('#flash');
-    if (!f) return;
-    f.classList.remove('go');
-    void f.offsetWidth;
-    f.classList.add('go');
-  }
-
-  function onCode(raw) {
-    const code = A.normCode(raw);
-    if (!code) return;
-    const now = Date.now();
-    if (S.settings.dedupe && code === st.lastCode && now - st.lastAt < 2000) {
-      st.lastAt = now; // 画面里一直是这个码：不断顺延，移开后才允许再计
-      return;
-    }
-    st.lastCode = code;
-    st.lastAt = now;
-    const item = A.findByCode(code);
-    if (item) {
-      A.bump(item, 1);
-      S.lastScan = { itemId: item.id, code: code, at: now };
-      flash();
-      A.feedback('ok');
-      A.updateScanCard();
-      if (A.updateChrome) A.updateChrome();
-    } else {
-      A.feedback('bad');
-      pauseForDialog();
-      openUnknown(code);
-    }
-  }
-
-  function pauseForDialog() {
-    st.paused = true;
-  }
-
-  /* 未知码：新建 / 关联 / 忽略 */
-  function openUnknown(code) {
-    if (!S.session) { A.toast('先导入一张清单', 'bad'); return; }
-    const exists = S.session.unknown.some((u) => u.code === code);
-    if (!exists) S.session.unknown.push({ code: code, at: Date.now() });
-    A.save();
-    if (A.updateChrome) A.updateChrome();
-
-    const body = document.createElement('div');
-    body.innerHTML =
-      '<div class="note warn" style="margin-bottom:12px">条码 <b style="font-variant-numeric:tabular-nums">' + A.esc(code) + '</b> 不在清单里。<br>可能是新品、表格漏登，或者这是箱码/包装码。</div>' +
-      '<div class="btn-row" style="margin-bottom:6px">' +
-      '<button class="btn primary" data-u="new">' + A.icon('plus') + ' 新建商品并计数</button>' +
-      '</div>' +
-      '<div class="sec-title" style="margin-top:14px">关联到清单里的商品</div>' +
-      '<div class="searchwrap"><input class="search" id="uSearch" placeholder="输入名称 / 编码 / 条码" autocomplete="off"></div>' +
-      '<div id="uList"></div>' +
-      '<div class="hint" style="margin-top:12px">关联后这个码会记到该商品名下，下次扫它直接累加。适合「一物多码」「箱码/单品码」。</div>';
-
-    const sheet = A.sheet({ title: '清单外条码', body: body });
-
-    const list = body.querySelector('#uList');
-    const renderList = function (q) {
-      const items = A.searchItems(q, 30);
-      if (!items.length) { list.innerHTML = '<div class="hint" style="padding:14px 2px">没有匹配的商品。</div>'; return; }
-      list.innerHTML = '<div class="rows">' + items.map(function (it) {
-        return '<div class="row" data-link="' + it.id + '"><div class="grow"><div class="nm">' + A.esc(it.name) + '</div>' +
-          '<div class="meta">' + (it.barcodes.length ? A.esc(it.barcodes[0]) : '无条码') + (it.spec ? ' · ' + A.esc(it.spec) : '') + '</div></div>' +
-          '<div class="badge gray">' + (it.count == null ? '未盘' : '实盘 ' + A.fmt(it.count)) + '</div>' +
-          '<span style="color:var(--acc);font-size:12px;font-weight:700">关联</span></div>';
-      }).join('') + '</div>';
-      A.$$('[data-link]', list).forEach(function (row) {
-        row.onclick = function () {
-          const it = A.findItem(row.getAttribute('data-link'));
-          if (!it) return;
-          if (!it.barcodes.includes(code)) it.barcodes.push(code);
-          it.manual = false;
-          A.bump(it, 1);
-          S.lastScan = { itemId: it.id, code: code, at: Date.now() };
-          S.session.unknown = S.session.unknown.filter((u) => u.code !== code);
-          A.touch('codes');
-          A.closeSheet();
-          A.updateScanCard();
-          if (A.updateChrome) A.updateChrome();
-          A.toast('已关联到「' + it.name + '」并 +1', 'ok');
-        };
-      });
-    };
-    renderList('');
-    const si = body.querySelector('#uSearch');
-    si.addEventListener('input', A.debounce(function () { renderList(si.value); }, 120));
-
-    body.querySelector('[data-u="new"]').onclick = function () {
-      const it = A.addItem({
-        name: '新品 ' + code.slice(-6), barcodes: [code], count: 1,
-        book: null, isNew: true, unit: '', loc: '',
-      });
-      it.count = 1;
-      it.countedAt = Date.now();
-      S.session.unknown = S.session.unknown.filter((u) => u.code !== code);
-      S.lastScan = { itemId: it.id, code: code, at: Date.now() };
-      A.touch('items');
-      A.closeSheet();
-      A.updateScanCard();
-      if (A.updateChrome) A.updateChrome();
-      A.toast('已新建商品，点「详情」改名归类', 'ok');
-      if (A.openItem) setTimeout(() => A.openItem(it.id), 220);
-    };
-  }
-
-  /* ---------- 手动输入 / 搜索 ---------- */
-  A.openManual = function () {
-    const body = document.createElement('div');
-    body.innerHTML =
-      '<div class="searchwrap"><input class="search" id="mIn" placeholder="条码 / 内部编码 / 名称" autocomplete="off" inputmode="search"></div>' +
-      '<div class="hint" style="margin-bottom:10px">输入完整条码回车直接计数；也可以搜商品名，点「+1」。</div>' +
-      '<div id="mList"></div>';
-    A.sheet({ title: '手动输入 / 搜索', body: body, onMount: function () {
-      const inp = body.querySelector('#mIn');
-      const list = body.querySelector('#mList');
-      const render = function () {
-        const q = inp.value.trim();
-        if (/^[0-9A-Za-z\-_]{4,}$/.test(q)) {
-          const hit = A.findByCode(q);
-          if (hit) {
-            list.innerHTML = '<div class="rows"><div class="row"><div class="grow"><div class="nm">' + A.esc(hit.name) + '</div>' +
-              '<div class="meta">' + (hit.barcodes[0] ? A.esc(hit.barcodes[0]) : '无条码') + ' · 账面 ' + (hit.book == null ? '—' : A.fmt(hit.book)) + '</div></div>' +
-              '<div class="badge acc">已匹配</div></div></div>';
-            return;
-          }
-        }
-        const items = A.searchItems(q, 40);
-        if (!items.length) { list.innerHTML = '<div class="hint" style="padding:16px 2px">没有匹配的商品。' + (q ? '去「清单」页确认一下名称。' : '输入关键字开始搜索。') + '</div>'; return; }
-        list.innerHTML = '<div class="rows">' + items.map(function (it) {
-          return '<div class="row" data-mid="' + it.id + '">' +
-            '<div class="grow"><div class="nm">' + A.esc(it.name) + '</div><div class="meta">' +
-            (it.barcodes.length ? A.esc(it.barcodes[0]) : '无条码') + (it.loc ? ' · ' + A.esc(it.loc) : '') +
-            ' · 账面 ' + (it.book == null ? '—' : A.fmt(it.book)) + '</div></div>' +
-            '<div class="count-box"><div class="cv">' + (it.count == null ? '—' : A.fmt(it.count)) + '</div><div class="cl">实盘</div></div>' +
-            '<button class="icon-btn" data-add="' + it.id + '" style="color:var(--acc);border-color:rgba(45,212,191,.35)">' + A.icon('plus') + '</button>' +
-            '</div>';
-        }).join('') + '</div>';
-        A.$$('[data-add]', list).forEach(function (b) {
-          b.onclick = function (ev) {
-            ev.stopPropagation();
-            const it = A.findItem(b.getAttribute('data-add'));
-            A.bump(it, 1);
-            S.lastScan = { itemId: it.id, code: '', at: Date.now() };
-            A.feedback('ok');
-            A.updateScanCard();
-            if (A.updateChrome) A.updateChrome();
-            render();
-            A.toast('「' + it.name + '」+1', 'ok');
-          };
-        });
-        A.$$('[data-mid]', list).forEach(function (row) {
-          row.onclick = function () {
-            const it = A.findItem(row.getAttribute('data-mid'));
-            if (it && A.openItem) A.openItem(it.id);
-          };
-        });
-      };
-      inp.addEventListener('input', A.debounce(render, 100));
-      inp.addEventListener('keydown', function (e) {
-        if (e.key !== 'Enter') return;
-        const q = inp.value.trim();
-        const hit = A.findByCode(q);
-        if (hit) {
-          A.bump(hit, 1);
-          S.lastScan = { itemId: hit.id, code: q, at: Date.now() };
-          A.feedback('ok');
-          A.closeSheet();
-          A.updateScanCard();
-          if (A.updateChrome) A.updateChrome();
-          A.toast('「' + hit.name + '」+1', 'ok');
-        } else {
-          A.toast('清单里没有这个码', 'bad');
-        }
-      });
-      render();
-      setTimeout(() => inp.focus(), 260);
-    } });
-  };
-
-  A.handleScannedCode = onCode;
-
 
   /* ---------- 拍照 / 相册识别（相机接口不可用时的兜底） ---------- */
   function rotateCanvas(src, deg) {
@@ -687,13 +489,6 @@
         torch.style.color = st.torchOn ? '#fbbf24' : '';
       } catch (e) { A.toast('这个摄像头不支持手电', 'bad'); }
     };
-    if (/[?&]debug=1/.test(location.search)) {
-      const dbg = document.createElement('div');
-      dbg.id = 'scanDebug';
-      dbg.style.cssText = 'position:absolute;left:8px;bottom:34px;z-index:5;font-size:10px;color:#9fb3c8;background:rgba(0,0,0,.55);padding:3px 6px;border-radius:6px';
-      dbg.textContent = '等待相机…';
-      container.querySelector('#camBox').appendChild(dbg);
-    }
     st.mounted = true;
     start();
   };
