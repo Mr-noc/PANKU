@@ -203,6 +203,7 @@
     if (!sess.unknown) sess.unknown = [];
     sess.items.forEach((it) => {
       if (!it.barcodes) it.barcodes = [];
+      if (!it.altCodes) it.altCodes = [];
       if (it.count === undefined) it.count = null;
       if (it.book === undefined) it.book = null;
     });
@@ -276,6 +277,10 @@
     if (sess) {
       sess.items.forEach((it) => {
         if (it.code) cd.set(A.normCode(it.code).toUpperCase(), it);
+        (it.altCodes || []).forEach(function (c) {
+          const k = A.normCode(c).toUpperCase();
+          if (k && !cd.has(k)) cd.set(k, it);
+        });
         (it.barcodes || []).forEach(function (b) {
           const c = A.normCode(b);
           if (!c) return;
@@ -415,7 +420,7 @@
     if (!key) return sess.items.slice(0, limit || 30);
     const out = [];
     for (const it of sess.items) {
-      const hay = [it.name, it.spec, it.code, it.loc, (it.barcodes || []).join(' ')].join(' ').toLowerCase();
+      const hay = [it.name, it.spec, it.code, it.loc, (it.barcodes || []).join(' '), (it.altCodes || []).join(' ')].join(' ').toLowerCase();
       if (hay.indexOf(key) >= 0) out.push(it);
       else if (key.length >= 2) {
         // 多关键字：空格分词，全部命中才算

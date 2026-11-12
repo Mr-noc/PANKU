@@ -20,7 +20,7 @@
 
   function detailRows() {
     const hasStore = S.session.items.some((it) => it.store);
-    const rows = [['序号', '门店', '商品名称', '规格', '单位', '内部编码', '69码/条码', '货位', '账面数量', '实盘数量', '差异', '状态', '备注']];
+    const rows = [['序号', '门店', '商品名称', '规格', '单位', '内部编码', '69码/条码', '69码状态', '货位', '账面数量', '实盘数量', '差异', '状态', '备注']];
     S.session.items.forEach(function (it, i) {
       const diff = it.count == null ? '' : (it.book == null ? Number(it.count) : Number(it.count) - Number(it.book));
       rows.push([
@@ -31,6 +31,7 @@
         it.unit || '',
         it.code || '',
         (it.barcodes || []).join(' / '),
+        (it.barcodes || []).length ? '有' : '无',
         it.loc || '',
         it.book == null ? '' : Number(it.book),
         it.count == null ? '' : Number(it.count),
@@ -84,7 +85,7 @@
     try {
       const wb = XLSX.utils.book_new();
       const ws1 = XLSX.utils.aoa_to_sheet(detailRows());
-      ws1['!cols'] = [{ wch: 6 }, { wch: 14 }, { wch: 30 }, { wch: 14 }, { wch: 7 }, { wch: 13 }, { wch: 22 }, { wch: 10 }, { wch: 10 }, { wch: 10 }, { wch: 8 }, { wch: 8 }, { wch: 20 }];
+      ws1['!cols'] = [{ wch: 6 }, { wch: 14 }, { wch: 30 }, { wch: 14 }, { wch: 7 }, { wch: 13 }, { wch: 22 }, { wch: 9 }, { wch: 10 }, { wch: 10 }, { wch: 10 }, { wch: 8 }, { wch: 8 }, { wch: 20 }];
       ws1['!freeze'] = { xSplit: 0, ySplit: 1 };
       XLSX.utils.book_append_sheet(wb, ws1, '盘点明细');
 

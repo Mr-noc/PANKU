@@ -202,6 +202,11 @@
       });
       st.stream = stream;
       st.track = stream.getVideoTracks()[0];
+      try {
+        if (st.track.applyConstraints) {
+          st.track.applyConstraints({ advanced: [{ focusMode: 'continuous' }] }).catch(function () {});
+        }
+      } catch (e) {}
       video.setAttribute('playsinline', '');
       video.muted = true;
       video.srcObject = stream;
@@ -257,37 +262,27 @@
   function setupDetector() {
     st.det = null;
     st.reader = null;
-    const wanted = ['ean_13', 'ean_8', 'code_128', 'code_39', 'code_93', 'upc_a', 'upc_e', 'itf', 'qr_code', 'codabar', 'data_matrix'];
-    if ('BarcodeDetector' in window) {
-      try {
-        const supported = (BarcodeDetector.getSupportedFormats ? BarcodeDetector.getSupportedFormats() : Promise.resolve(wanted));
-        Promise.resolve(supported).then(function (fmts) {
-          const use = wanted.filter((f) => fmts.indexOf(f) >= 0);
-          if (use.length) st.det = new BarcodeDetector({ formats: use });
-        }).catch(function () {});
-      } catch (e) {}
-    }
-    if (!st.det && window.ZXing) {
-      try {
-        const hints = new Map();
-        hints.set(ZXing.DecodeHintType.POSSIBLE_FORMATS, [
-          ZXing.BarcodeFormat.EAN_13, ZXing.BarcodeFormat.EAN_8,
-          ZXing.BarcodeFormat.UPC_A, ZXing.BarcodeFormat.UPC_E,
-          ZXing.BarcodeFormat.CODE_128, ZXing.BarcodeFormat.CODE_39,
-          ZXing.BarcodeFormat.ITF, ZXing.BarcodeFormat.QR_CODE,
-          ZXing.BarcodeFormat.CODABAR,
-        ]);
-        st.reader = new ZXing.MultiFormatReader();
-        st.reader.setHints(hints);
-        st.canvas = st.canvas || document.createElement('canvas');
-      } catch (e) { console.warn('ZXing init', e); }
-    }
+    if (!window.ZXing) return;
+    try {
+      const hints = new Map();
+      hints.set(ZXing.DecodeHintType.POSSIBLE_FORMATS, [
+        ZXing.BarcodeFormat.EAN_13, ZXing.BarcodeFormat.EAN_8,
+        ZXing.BarcodeFormat.UPC_A, ZXing.BarcodeFormat.UPC_E,
+        ZXing.BarcodeFormat.CODE_128, ZXing.BarcodeFormat.CODE_39,
+        ZXing.BarcodeFormat.ITF, ZXing.BarcodeFormat.QR_CODE,
+        ZXing.BarcodeFormat.CODABAR,
+      ]);
+      hints.set(ZXing.DecodeHintType.TRY_HARDER, false);
+      st.reader = new ZXing.MultiFormatReader();
+      st.reader.setHints(hints);
+      st.canvas = st.canvas || document.createElement('canvas');
+    } catch (e) { console.warn('ZXing init', e); }
   }
 
   function zxingScan() {
     const v = st.video;
     if (!v || !v.videoWidth || !st.reader) return;
-    const maxW = 800;
+    const maxW = 960;
     const scale = Math.min(1, maxW / v.videoWidth);
     const w = Math.round(v.videoWidth * scale), h = Math.round(v.videoHeight * scale);
     const c = st.canvas;
@@ -308,15 +303,9 @@
     const step = function () {
       if (!st.running) return;
       if (!st.paused && st.video && st.video.readyState >= 2 && st.video.videoWidth) {
-        if (st.det) {
-          st.det.detect(st.video).then(function (codes) {
-            if (codes && codes.length) onCode(codes[0].rawValue);
-          }).catch(function () {});
-        } else if (st.reader) {
-          zxingScan();
-        }
+        if (st.reader) zxingScan();
       }
-      st.timer = setTimeout(step, st.det ? 140 : 240);
+      st.timer = setTimeout(step, 200);
     };
     clearTimeout(st.timer);
     step();
@@ -343,7 +332,10 @@
     const code = A.normCode(raw);
     if (!code) return;
     const now = Date.now();
-    if (S.settings.dedupe && code === st.lastCode && now - st.lastAt < 1200) return;
+    if (S.settings.dedupe && code === st.lastCode && now - st.lastAt < 2000) {
+      st.lastAt = now; // 画面里一直是这个码：不断顺延，移开后才允许再计
+      return;
+    }
     st.lastCode = code;
     st.lastAt = now;
     const item = A.findByCode(code);

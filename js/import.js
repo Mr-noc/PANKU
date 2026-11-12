@@ -132,8 +132,13 @@
       const name = map.name != null ? textCell(row[map.name]) : '';
       const barcodeRaw = map.barcode != null ? row[map.barcode] : '';
       const codeRaw = map.code != null ? row[map.code] : '';
-      const codes = A.extractCodes(barcodeRaw);
-      const code = A.normCode(codeRaw);
+      const rawCodes = A.extractCodes(barcodeRaw);
+      const codes = rawCodes.filter((c) => /^\d{8,14}$/.test(c));
+      let code = A.normCode(codeRaw);
+      if (!code) {
+        const internal = rawCodes.find((c) => !/^\d{8,14}$/.test(c));
+        if (internal) code = internal;
+      }
       if (!name && !codes.length && !code) continue;
       if (/^(合计|总计|小计|共计|备注|说明)[:：]?$/.test(name)) continue;
       const storeV = map.store != null ? textCell(row[map.store]) : '';
@@ -145,6 +150,7 @@
         spec: map.spec != null ? textCell(row[map.spec]) : '',
         unit: map.unit != null ? textCell(row[map.unit]) : '',
         code: code,
+        altCodes: rawCodes.filter((c) => !/^\d{8,14}$/.test(c)),
         barcodes: codes,
         loc: map.loc != null ? textCell(row[map.loc]) : '',
         book: map.book != null ? A.num(row[map.book]) : null,
@@ -173,7 +179,7 @@
     for (let r = start; r < rows.length; r++) {
       const row = rows[r] || [];
       const name = map.name != null ? textCell(row[map.name]) : '';
-      const codes = map.barcode != null ? A.extractCodes(row[map.barcode]) : [];
+      const codes = (map.barcode != null ? A.extractCodes(row[map.barcode]) : []).filter((c) => /^\d{8,14}$/.test(c));
       const code = map.code != null ? A.normCode(row[map.code]) : '';
       if (!name && !codes.length && !code) continue;
       if (/^(合计|总计|小计|共计|备注|说明)[:：]?$/.test(name)) continue;

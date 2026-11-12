@@ -7,7 +7,7 @@
 
   const TABS = [
     { k: 'scan', label: '扫码', icon: 'camera' },
-    { k: 'nocode', label: '无码', icon: 'tag' },
+    { k: 'nocode', label: '无69', icon: 'tag' },
     { k: 'list', label: '清单', icon: 'list' },
     { k: 'stats', label: '统计', icon: 'chart' },
   ];
@@ -128,17 +128,17 @@
   /* ---------------- 扫码页 ---------------- */
   // 由 scan.js 挂载
 
-  /* ---------------- 无码页 ---------------- */
+  /* ---------------- 无69页 ---------------- */
   function viewNoCode(v) {
     v.innerHTML =
       '<div class="searchwrap">' + A.icon('search') +
-      '<input class="search" id="ncSearch" placeholder="搜索无码商品（名称 / 货位 / 编码）" value="' + A.esc(S.q2) + '">' +
+      '<input class="search" id="ncSearch" placeholder="搜索无69商品（名称 / 货位 / 编码）" value="' + A.esc(S.q2) + '">' +
       (S.q2 ? '<button class="search-clear" id="ncClear">' + A.icon('close') + '</button>' : '') +
       '</div>' +
       '<div class="note" style="margin-bottom:10px">' +
       '<b>没有 69 码怎么盘？</b><br>' +
       '① 在这里点 <b>+</b> 手工计数；② 点商品可<b>拍照</b>，货架上一眼认出；③ 给它们贴<b>内部码</b>标签，之后直接扫码。' +
-      '<div style="margin-top:8px"><button class="btn sm" data-act="print-labels">' + A.icon('print') + ' 打印无码标签</button></div>' +
+      '<div style="margin-top:8px"><button class="btn sm" data-act="print-labels">' + A.icon('print') + ' 打印无69标签</button></div>' +
       '</div>' +
       '<div class="chipbar" id="ncChips">' +
       chip('all', '全部') + chip('todo', '未盘') + chip('done', '已盘') +
@@ -172,14 +172,14 @@
       });
       if (!items.length) {
         box.innerHTML = '<div class="empty"><div class="e-ico">✓</div>' +
-          (q ? '没有匹配的无码商品' : (S.filter === 'todo' ? '无码商品都盘完了' : '清单里没有无码商品')) +
-          '<br><span style="font-size:12px">条码破损、不好扫的商品，可在「清单」里点开详情，勾选「放进无码页」。</span></div>';
+          (q ? '没有匹配的无69商品' : (S.filter === 'todo' ? '无69商品都盘完了' : '清单里没有无69商品')) +
+          '<br><span style="font-size:12px">条码破损、不好扫的商品，可在「清单」里点开详情，勾选「放进无69页」。</span></div>';
         return;
       }
       box.innerHTML = '<div class="rows">' + items.map(function (it) {
         const cnt = it.count == null ? '—' : A.fmt(it.count);
         return '<div class="row" data-row="' + it.id + '">' +
-          '<div class="thumb" style="' + (it.photo ? "background-image:url('" + it.photo + "')" : '') + '">' + (it.photo ? '' : '无码') + '</div>' +
+          '<div class="thumb" style="' + (it.photo ? "background-image:url('" + it.photo + "')" : '') + '">' + (it.photo ? '' : '无69') + '</div>' +
           '<div class="grow" data-open="' + it.id + '">' +
           '<div class="nm">' + A.esc(it.name || '未命名') + '</div>' +
           '<div class="meta">' + (it.spec ? A.esc(it.spec) + '<span class="sep">·</span>' : '') +
@@ -191,7 +191,7 @@
           '<button data-inc="' + it.id + '" aria-label="加一">+</button>' +
           '</div></div>';
       }).join('') + '</div>' +
-        '<div class="hint" style="padding:10px 4px 0">按货位排序，共 ' + items.length + ' 个无码商品</div>';
+        '<div class="hint" style="padding:10px 4px 0">按货位排序，共 ' + items.length + ' 个无69商品</div>';
       bindRowActions(box);
     }
   }
@@ -199,7 +199,7 @@
   /* ---------------- 清单页 ---------------- */
   const FILTERS = [
     { k: 'all', label: '全部' }, { k: 'todo', label: '未盘' }, { k: 'done', label: '已盘' },
-    { k: 'diff', label: '有差异' }, { k: 'nocode', label: '无码' },
+    { k: 'diff', label: '有差异' }, { k: 'nocode', label: '无69' },
   ];
 
   function chip(k, label, n) {
@@ -264,7 +264,7 @@
         const diff = A.isDiff(it);
         return '<div class="row" data-open="' + it.id + '">' +
           '<div class="grow"><div class="nm">' + A.esc(it.name || '未命名') +
-          (A.needManual(it) ? '<span class="badge gray">无码</span>' : '') + '</div>' +
+          (A.needManual(it) ? '<span class="badge gray">无69</span>' : '') + '</div>' +
           '<div class="meta">' + (it.barcodes && it.barcodes.length ? A.esc(it.barcodes[0]) : '—') +
           (it.spec ? '<span class="sep">·</span>' + A.esc(it.spec) : '') +
           (it.loc ? '<span class="sep">·</span>位 ' + A.esc(it.loc) : '') + '</div></div>' +
@@ -293,11 +293,11 @@
       '<div class="metric"><div class="m-lab">已盘 / 总品项</div><div class="m-val acc">' + st.counted + '<span style="font-size:15px;color:var(--tx3);font-weight:600">/' + st.total + '</span></div><div class="m-sub">完成 ' + pct + '%</div></div>' +
       '<div class="metric"><div class="m-lab">差异品项</div><div class="m-val ' + (st.diff ? 'warn' : 'ok') + '">' + st.diff + '</div><div class="m-sub">盘盈 ' + st.up + ' · 盘亏 ' + st.down + (st.newItem ? ' · 新品 ' + st.newItem : '') + '</div></div>' +
       '<div class="metric"><div class="m-lab">实盘合计</div><div class="m-val">' + A.fmt(st.real) + '</div><div class="m-sub">账面合计 ' + A.fmt(st.book) + '</div></div>' +
-      '<div class="metric"><div class="m-lab">无码 / 清单外码</div><div class="m-val ' + (st.unknown ? 'bad' : '') + '">' + st.noCode + '<span style="font-size:15px;color:var(--tx3);font-weight:600"> / ' + st.unknown + '</span></div><div class="m-sub">无码商品 · 待处理条码</div></div>' +
+      '<div class="metric"><div class="m-lab">无69 / 清单外码</div><div class="m-val ' + (st.unknown ? 'bad' : '') + '">' + st.noCode + '<span style="font-size:15px;color:var(--tx3);font-weight:600"> / ' + st.unknown + '</span></div><div class="m-sub">无69商品 · 待处理条码</div></div>' +
       '</div>' +
       '<div class="btn-row" style="margin-top:12px">' +
       '<button class="btn primary" data-act="export">' + A.icon('download') + ' 导出 Excel</button>' +
-      '<button class="btn" data-act="print-labels">' + A.icon('print') + ' 打印无码标签</button>' +
+      '<button class="btn" data-act="print-labels">' + A.icon('print') + ' 打印无69标签</button>' +
       '</div>' +
       '<div class="sec-title">差异商品（' + diffs.length + '）</div>' +
       (diffs.length ? '<div class="rows">' + diffs.slice(0, 60).map(function (it) {
@@ -378,7 +378,7 @@
     const cnt = () => (it.count == null ? '—' : A.fmt(it.count));
     body.innerHTML =
       '<div class="detail-head"><div class="dh-t" id="dTitle">' + A.esc(it.name || '未命名商品') + '</div>' +
-      (A.needManual(it) ? '<span class="badge gray">无码</span>' : '<span class="badge acc">有条码</span>') + '</div>' +
+      (A.needManual(it) ? '<span class="badge gray">无69</span>' : '<span class="badge acc">有条码</span>') + '</div>' +
       '<div class="it-photo" id="dPhoto" style="' + (it.photo ? "background-image:url('" + it.photo + "')" : '') + '">' +
       (it.photo ? '' : '<span>拍照存档，方便下次认货</span>') +
       '<div class="ph-btns"><button data-ph="take">' + (it.photo ? '重拍' : '拍照') + '</button>' +
@@ -417,8 +417,8 @@
       '<input class="inp" id="dCodeIn" placeholder="扫码枪或手动输入条码" inputmode="numeric" style="flex:1">' +
       '<button class="btn sm primary" id="dCodeOk">添加</button>' +
       '</div>' +
-      '<label class="switch" style="margin:14px 0 4px;font-size:13px"><input type="checkbox" id="dManual"' + (it.manual ? ' checked' : '') + '> 放进「无码」页（条码破损/不好扫）</label>' +
-      '<div class="hint" style="margin-bottom:10px">勾选后，即使有条码也会出现在无码页，方便手工数。</div>' +
+      '<label class="switch" style="margin:14px 0 4px;font-size:13px"><input type="checkbox" id="dManual"' + (it.manual ? ' checked' : '') + '> 放进「无69」页（条码破损/不好扫）</label>' +
+      '<div class="hint" style="margin-bottom:10px">勾选后，即使有条码也会出现在无69页，方便手工数。</div>' +
       '<div class="btn-row">' +
       '<button class="btn" id="dPrint">' + A.icon('print') + ' 打印标签</button>' +
       '<button class="btn danger" id="dDel">删除</button>' +
@@ -464,6 +464,9 @@
       box.innerHTML = it.barcodes.map(function (b) {
         return '<span class="code-chip">' + A.esc(b) + '<button class="x" data-rm="' + A.esc(b) + '">×</button></span>';
       }).join('');
+      if (it.altCodes && it.altCodes.length) {
+        box.insertAdjacentHTML('beforeend', '<div class="hint" style="width:100%;margin-top:4px">表格里的内码：' + it.altCodes.map(A.esc).join(' / ') + '（可搜索、可手输，不算 69 码）</div>');
+      }
       $$('[data-rm]', box).forEach(function (x) {
         x.onclick = function () {
           const code = x.getAttribute('data-rm');
@@ -654,7 +657,7 @@
       row('tasks', 'list', '盘点任务', '切换 / 新建 / 删除') +
       row('import', 'upload', '导入另一张清单', '追加或新建') +
       row('export', 'download', '导出盘点结果', 'Excel / CSV') +
-      row('labels', 'print', '打印无码商品标签', '生成内部码，贴到商品上') +
+      row('labels', 'print', '打印无69商品标签', '生成内部码，贴到商品上') +
       row('help', 'warn', '使用说明', '3 分钟上手') +
       row('settings', 'edit', '设置', '声音 / 震动 / 防连扫') +
       row('reset', 'trash', '清空本盘数量', '保留商品清单') +
@@ -684,11 +687,11 @@
       '<div class="rows">' +
       '<div class="row"><div class="grow"><div class="nm">提示音</div><div class="meta">扫到商品时“嘀”一声</div></div><label class="switch"><input type="checkbox" data-s="sound"' + (s.sound ? ' checked' : '') + '></label></div>' +
       '<div class="row"><div class="grow"><div class="nm">震动</div><div class="meta">识别成功/失败时轻震</div></div><label class="switch"><input type="checkbox" data-s="vibrate"' + (s.vibrate ? ' checked' : '') + '></label></div>' +
-      '<div class="row"><div class="grow"><div class="nm">防连扫</div><div class="meta">同一条码 1.2 秒内只算一次</div></div><label class="switch"><input type="checkbox" data-s="dedupe"' + (s.dedupe ? ' checked' : '') + '></label></div>' +
+      '<div class="row"><div class="grow"><div class="nm">防连扫</div><div class="meta">同一个码移开后 2 秒才再计</div></div><label class="switch"><input type="checkbox" data-s="dedupe"' + (s.dedupe ? ' checked' : '') + '></label></div>' +
       '<div class="row"><div class="grow"><div class="nm">保持屏幕常亮</div><div class="meta">扫码时不让屏幕熄灭</div></div><label class="switch"><input type="checkbox" data-s="wake"' + (s.wake ? ' checked' : '') + '></label></div>' +
       '</div>' +
       '<div class="hint" style="margin-top:12px">设置只影响这台手机上的浏览器。</div>' +
-      '<div class="hint" style="margin-top:6px;opacity:.7">版本 1.2 · 门店版</div>' +
+      '<div class="hint" style="margin-top:6px;opacity:.7">版本 1.3 · 门店版</div>' +
       '<button class="btn block" id="hardFix" style="margin-top:14px">修复加载 / 强制更新</button>' +
       '<div class="hint" style="margin-top:8px">导入没反应、界面没更新时点它：会清掉旧缓存并重新加载，已盘数据不受影响。</div>';
     A.sheet({ title: '设置', body: body, onMount: function (b) {
@@ -712,14 +715,14 @@
       '<div class="card" style="line-height:1.85;font-size:13.5px;color:var(--tx2)">' +
       '1. 右上角 <b>导入</b> Excel/CSV，选好「商品名称 / 69 码 / 账面数量」等列<br>' +
       '2. 到 <b>扫码</b> 页，对准条码，每次 +1，自动保存<br>' +
-      '3. 没有条码的商品去 <b>无码</b> 页点 +1<br>' +
+      '3. 没有条码的商品去 <b>无69</b> 页点 +1<br>' +
       '4. <b>统计</b> 页看差异，导出 Excel 交差' +
       '</div>' +
       '<div class="sec-title">表格里没有 69 码怎么办？</div>' +
       '<div class="card" style="font-size:13px;line-height:1.8;color:var(--tx2)">' +
-      '<b style="color:var(--tx)">方法一：无码页手工计数</b><br>导入时没有条码的商品会自动进「无码」页，按货位排序，点 +1 就行。<br><br>' +
-      '<b style="color:var(--tx)">方法二：拍照认货</b><br>点开无码商品 → 拍照。货架上看到实物，对照照片点 +1，不会认错。<br><br>' +
-      '<b style="color:var(--tx)">方法三：贴内部码标签（推荐）</b><br>菜单 → 打印无码商品标签。App 会给每个无码商品生成 <b>NB00001</b> 这样的内部码并打印 Code128 条码，贴在商品或货架上，之后用扫码页直接扫。<br><br>' +
+      '<b style="color:var(--tx)">方法一：无69页手工计数</b><br>导入时没有条码的商品会自动进「无69」页，按货位排序，点 +1 就行。<br><br>' +
+      '<b style="color:var(--tx)">方法二：拍照认货</b><br>点开无69商品 → 拍照。货架上看到实物，对照照片点 +1，不会认错。<br><br>' +
+      '<b style="color:var(--tx)">方法三：贴内部码标签（推荐）</b><br>菜单 → 打印无69商品标签。App 会给每个无69商品生成 <b>NB00001</b> 这样的内部码并打印 Code128 条码，贴在商品或货架上，之后用扫码页直接扫。<br><br>' +
       '<b style="color:var(--tx)">方法四：扫到什么算什么</b><br>扫到清单外的码，可「新建商品」或「关联到已有商品」。适合箱码、包装码、临时新品。' +
       '</div>' +
       '<div class="sec-title">小技巧</div>' +
