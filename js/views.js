@@ -700,14 +700,14 @@
       '<div class="row"><div class="grow"><div class="nm">保持屏幕常亮</div><div class="meta">扫码时不让屏幕熄灭</div></div><label class="switch"><input type="checkbox" data-s="wake"' + (s.wake ? ' checked' : '') + '></label></div>' +
       '</div>' +
       '<div class="hint" style="margin-top:12px">设置只影响这台手机上的浏览器。</div>' +
-      '<div class="hint" style="margin-top:6px;opacity:.7">版本 2.0 · 兼容版</div>' +
-      '<button class="btn block" id="selfTest" style="margin-top:14px">识别自检（不用相机）</button>' +
+      '<div class="hint" style="margin-top:6px;opacity:.7">版本 2.1 · 诊断版</div>' +
+      '<button class="btn block" id="selfTest" style="margin-top:14px">识别诊断（把结果发我）</button>' +
       '<div class="hint" id="engineInfo" style="margin-top:8px"></div>' +
       '<button class="btn block" id="hardFix" style="margin-top:10px">修复加载 / 强制更新</button>' +
       '<div class="hint" style="margin-top:8px">导入没反应、界面没更新时点它：会清掉旧缓存并重新加载，已盘数据不受影响。</div>';
     A.sheet({ title: '设置', body: body, onMount: function (b) {
       const stBtn = $('#selfTest', b);
-      if (stBtn) stBtn.onclick = function () { A.decodeSelfTest(); };
+      if (stBtn) stBtn.onclick = function () { A.decodeDiag(); };
       const ei = $('#engineInfo', b);
       if (ei) ei.textContent = '解码库 ZXing ' + (window.ZXing ? '已加载' : '未加载') + ' · 浏览器自带检测器 ' + ('BarcodeDetector' in window ? '支持' : '不支持');
       const fix = $('#hardFix', b);
