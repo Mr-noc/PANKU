@@ -139,6 +139,8 @@
         const internal = rawCodes.find((c) => !/^\d{8,14}$/.test(c));
         if (internal) code = internal;
       }
+      // 表格里没有单独的 69 码列时，商品编码本身就是 69 码（纯数字才算，S 开头仍是无 69）
+      if (!codes.length && code && /^\d+$/.test(code)) codes.push(code);
       if (!name && !codes.length && !code) continue;
       if (/^(合计|总计|小计|共计|备注|说明)[:：]?$/.test(name)) continue;
       const storeV = map.store != null ? textCell(row[map.store]) : '';
@@ -181,6 +183,7 @@
       const name = map.name != null ? textCell(row[map.name]) : '';
       const codes = (map.barcode != null ? A.extractCodes(row[map.barcode]) : []).filter((c) => /^\d{8,14}$/.test(c));
       const code = map.code != null ? A.normCode(row[map.code]) : '';
+      if (!codes.length && code && /^\d+$/.test(code)) codes.push(code);
       if (!name && !codes.length && !code) continue;
       if (/^(合计|总计|小计|共计|备注|说明)[:：]?$/.test(name)) continue;
       if (S.store && map.store != null && textCell(row[map.store]) !== S.store) continue;

@@ -201,6 +201,16 @@
     S.undo = [];
     S.lastScan = null;
     if (!sess.unknown) sess.unknown = [];
+    // 兼容 1.4 导入的旧数据：整份都没有条码、但编码是纯数字时，自动补成 69 码
+    if (!sess.barcodeFixed) {
+      const anyBc = sess.items.some((it) => (it.barcodes || []).length);
+      if (!anyBc) {
+        sess.items.forEach(function (it) {
+          if (it.code && /^\d+$/.test(it.code)) it.barcodes = [it.code];
+        });
+      }
+      sess.barcodeFixed = true;
+    }
     sess.items.forEach((it) => {
       if (!it.barcodes) it.barcodes = [];
       if (!it.altCodes) it.altCodes = [];
