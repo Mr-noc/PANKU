@@ -291,12 +291,23 @@
     }
   }
 
+  function toLuminance(imgData) {
+    const src = imgData.data;
+    const n = imgData.width * imgData.height;
+    const out = new Uint8ClampedArray(n);
+    for (let i = 0; i < n; i++) {
+      const j = i * 4;
+      out[i] = (src[j] * 0.299 + src[j + 1] * 0.587 + src[j + 2] * 0.114) | 0;
+    }
+    return out;
+  }
   function decodeCanvas(c) {
     if (!st.reader) return null;
     try {
       const ctx = c.getContext('2d', { willReadFrequently: true });
       const img = ctx.getImageData(0, 0, c.width, c.height);
-      const lum = new ZXing.RGBLuminanceSource(img.data, c.width, c.height);
+      const gray = toLuminance(img);
+      const lum = new ZXing.RGBLuminanceSource(gray, c.width, c.height);
       const bmp = new ZXing.BinaryBitmap(new ZXing.HybridBinarizer(lum));
       const res = st.reader.decode(bmp);
       return res && res.getText ? res.getText() : null;
@@ -580,7 +591,8 @@
     try {
       const ctx = canvas.getContext('2d', { willReadFrequently: true });
       const img = ctx.getImageData(0, 0, canvas.width, canvas.height);
-      const lum = new ZXing.RGBLuminanceSource(img.data, canvas.width, canvas.height);
+      const gray = toLuminance(img);
+      const lum = new ZXing.RGBLuminanceSource(gray, canvas.width, canvas.height);
       const bmp = new ZXing.BinaryBitmap(new ZXing.HybridBinarizer(lum));
       const hints = new Map();
       hints.set(ZXing.DecodeHintType.POSSIBLE_FORMATS, [
