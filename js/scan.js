@@ -202,11 +202,6 @@
       });
       st.stream = stream;
       st.track = stream.getVideoTracks()[0];
-      try {
-        if (st.track.applyConstraints) {
-          st.track.applyConstraints({ advanced: [{ focusMode: 'continuous' }] }).catch(function () {});
-        }
-      } catch (e) {}
       video.setAttribute('playsinline', '');
       video.muted = true;
       video.srcObject = stream;
@@ -439,6 +434,25 @@
       }
     };
     inp.click();
+  };
+
+  A.decodeSelfTest = async function () {
+    try {
+      const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+      JsBarcode(svg, '6901234567892', {
+        format: 'EAN13', width: 4, height: 140, displayValue: false,
+        margin: 12, background: '#ffffff', lineColor: '#000000',
+      });
+      const xml = new XMLSerializer().serializeToString(svg);
+      const blob = new Blob([xml], { type: 'image/svg+xml' });
+      A.toast('正在自检解码器…');
+      const code = await decodeImageFile(blob);
+      if (code === '6901234567892') A.toast('自检通过：解码器正常', 'ok');
+      else if (code) A.toast('自检异常：读到了 ' + code, 'bad');
+      else A.toast('自检失败：解码器读不出示例条码', 'bad');
+    } catch (e) {
+      A.toast('自检异常：' + (e.message || e), 'bad');
+    }
   };
 
   /* ---------- 挂载 / 卸载 ---------- */
