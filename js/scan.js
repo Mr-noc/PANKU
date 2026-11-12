@@ -202,6 +202,11 @@
       });
       st.stream = stream;
       st.track = stream.getVideoTracks()[0];
+      st.capture = null;
+      st.captureFail = 0;
+      try {
+        if ('ImageCapture' in window) st.capture = new ImageCapture(st.track);
+      } catch (e) { st.capture = null; }
       video.setAttribute('playsinline', '');
       video.muted = true;
       video.srcObject = stream;
@@ -286,23 +291,50 @@
     }
   }
 
+  function decodeCanvas(c) {
+    if (!st.reader) return null;
+    try {
+      const ctx = c.getContext('2d', { willReadFrequently: true });
+      const img = ctx.getImageData(0, 0, c.width, c.height);
+      const lum = new ZXing.RGBLuminanceSource(img.data, c.width, c.height);
+      const bmp = new ZXing.BinaryBitmap(new ZXing.HybridBinarizer(lum));
+      const res = st.reader.decode(bmp);
+      return res && res.getText ? res.getText() : null;
+    } catch (e) { return null; }
+  }
+  function decodeFrame(src, sw, sh, tryRotate) {
+    if (!src || !sw || !sh || !st.reader) return null;
+    const maxW = 900;
+    const scale = Math.min(1, maxW / Math.max(sw, sh));
+    const w = Math.max(2, Math.round(sw * scale)), h = Math.max(2, Math.round(sh * scale));
+    const c = st.canvas;
+    c.width = w; c.height = h;
+    c.getContext('2d', { willReadFrequently: true }).drawImage(src, 0, 0, w, h);
+    let code = decodeCanvas(c);
+    if (!code && tryRotate) code = decodeCanvas(rotateCanvas(c, 90));
+    return code;
+  }
   function zxingScan() {
     const v = st.video;
     if (!v || !v.videoWidth || !st.reader) return;
-    const maxW = 800;
-    const scale = Math.min(1, maxW / v.videoWidth);
-    const w = Math.round(v.videoWidth * scale), h = Math.round(v.videoHeight * scale);
-    const c = st.canvas;
-    c.width = w; c.height = h;
-    const ctx = c.getContext('2d', { willReadFrequently: true });
-    ctx.drawImage(v, 0, 0, w, h);
-    const img = ctx.getImageData(0, 0, w, h);
+    const code = decodeFrame(v, v.videoWidth, v.videoHeight, false);
+    if (code) onCode(code);
+  }
+  async function grabWithCapture() {
+    if (st.grabBusy || !st.capture) return;
+    st.grabBusy = true;
     try {
-      const lum = new ZXing.RGBLuminanceSource(img.data, w, h);
-      const bmp = new ZXing.BinaryBitmap(new ZXing.HybridBinarizer(lum));
-      const res = st.reader.decode(bmp);
-      if (res && res.getText) onCode(res.getText());
-    } catch (e) { /* 没扫到是常态 */ }
+      const bmp = await st.capture.grabFrame();
+      const code = decodeFrame(bmp, bmp.width, bmp.height, true);
+      if (bmp.close) bmp.close();
+      if (code) onCode(code);
+    } catch (e) {
+      st.captureFail = (st.captureFail || 0) + 1;
+      if (st.captureFail > 3) st.capture = null;
+      zxingScan();
+    } finally {
+      st.grabBusy = false;
+    }
   }
 
   function loop() {
@@ -324,12 +356,17 @@
             st.detMiss = (st.detMiss || 0) + 1;
             if (st.detMiss > 6) st.det = null;
           });
+        } else if (st.capture) {
+          grabWithCapture();
         } else if (st.reader) {
           zxingScan();
         }
       }
       st.tick = (st.tick || 0) + 1;
-      if (!st.paused && st.tick % 5 === 0) grabDecode();
+      if (st.tick === 60 && !st.hits) {
+        A.toast('扫不出来？点右上角「拍照」，用系统相机拍一张也能识别', null);
+      }
+      if (!st.paused && st.tick % 8 === 0) grabDecode();
       st.timer = setTimeout(step, st.det ? 140 : 240);
     };
     clearTimeout(st.timer);
