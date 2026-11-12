@@ -26,6 +26,7 @@
       case 'export': A.openExport(); break;
       case 'print-labels': A.printLabels(); break;
       case 'manual': A.openManual(); break;
+      case 'conflicts': A.openConflicts(); break;
       case 'undo': A.undoLast(); refreshAfterCount(); break;
       case 'scan-plus': {
         const it = lastItem();
