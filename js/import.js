@@ -10,7 +10,7 @@
     { k: 'spec', label: '规格', keys: ['规格型号', '规格', '型号', '包装', 'spec'] },
     { k: 'unit', label: '单位', keys: ['计量单位', '单位', 'unit'] },
     { k: 'book', label: '账面数量', keys: ['账面数量', '账面库存', '账面数', '库存数量', '库存数', '结存', '账面', '库存', '应有', '系统数', '数量', 'qty', 'quantity'] },
-    { k: 'loc', label: '货位', keys: ['货位', '库位', '仓位', '储位', '货架', '位置', '区域', 'location'] },
+    { k: 'loc', label: '仓库 / 货位', keys: ['仓库', '货位', '库位', '仓位', '储位', '货架', '位置', '区域', 'location'] },
     { k: 'store', label: '门店', keys: ['门店名称', '所属门店', '门店', '店铺', '分店', '店名', 'store', 'shop'] },
   ];
 
@@ -65,7 +65,7 @@
     return s;
   }
 
-  const S = { wb: null, sheet: '', rows: [], headerRow: -1, map: {}, source: '', mode: 'new', fileName: '', page: null, store: '' };
+  const S = { wb: null, sheet: '', rows: [], headerRow: -1, map: {}, source: '', mode: 'new', fileName: '', page: null, store: '', onlySale: true };
 
   async function readFile(file) {
     let buf;
@@ -145,6 +145,8 @@
       if (/^(合计|总计|小计|共计|备注|说明)[:：]?$/.test(name)) continue;
       const storeV = map.store != null ? textCell(row[map.store]) : '';
       if (S.store && storeV !== S.store) continue;
+      const whV = map.loc != null ? textCell(row[map.loc]) : '';
+      if (S.onlySale && map.loc != null && whV.indexOf('销售仓') < 0) continue;
       const it = {
         id: A.uid('it'),
         store: storeV,
@@ -187,10 +189,21 @@
       if (!name && !codes.length && !code) continue;
       if (/^(合计|总计|小计|共计|备注|说明)[:：]?$/.test(name)) continue;
       if (S.store && map.store != null && textCell(row[map.store]) !== S.store) continue;
+      if (S.onlySale && map.loc != null && textCell(row[map.loc]).indexOf('销售仓') < 0) continue;
       n++;
       if (!codes.length) noCode++;
     }
     return { n: n, noCode: noCode };
+  }
+
+  function hasSaleWarehouse() {
+    if (S.map.loc == null) return false;
+    const start = S.headerRow < 0 ? 0 : S.headerRow + 1;
+    for (let r = start; r < Math.min(S.rows.length, start + 400); r++) {
+      const v = textCell((S.rows[r] || [])[S.map.loc]);
+      if (v.indexOf('销售仓') >= 0) return true;
+    }
+    return false;
   }
 
   function storeValues() {
@@ -293,6 +306,7 @@
       (S.map.barcode != null ? row('69 码', 'barcode') : '') +
       '</div>' +
       storeBlockHTML() +
+      (hasSaleWarehouse() ? '<label class="switch" style="margin:12px 0 2px;font-size:13px"><input type="checkbox" id="wSale"' + (S.onlySale ? ' checked' : '') + '> 只盘销售仓（跳过洪哥仓 / 在途 / 报废仓）</label>' : '') +
       '<div class="sec-title">预览</div>' +
       '<div id="wPreview">' + previewSimple() + '</div>' +
       '<div class="note" id="wCount" style="margin-top:12px">将导入 <b>' + prev.n + '</b> 个商品，其中 <b>' + prev.noCode + '</b> 个没有 69 码。</div>' +
@@ -312,6 +326,8 @@
     };
     const stSel = $('#wStore', root);
     if (stSel) stSel.onchange = function () { S.store = stSel.value; refresh(); };
+    const saleChk = $('#wSale', root);
+    if (saleChk) saleChk.onchange = function () { S.onlySale = saleChk.checked; refresh(); };
     $('#wGo', root).onclick = doImport;
     $('#wAdv', root).onclick = function () { S.advanced = true; renderWizard(); };
   }
