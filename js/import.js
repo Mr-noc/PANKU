@@ -65,7 +65,7 @@
     return s;
   }
 
-  const S = { wb: null, sheet: '', rows: [], headerRow: -1, map: {}, source: '', mode: 'new', fileName: '', page: null, store: '', onlySale: true };
+  const S = { wb: null, sheet: '', rows: [], headerRow: -1, map: {}, source: '', mode: 'new', fileName: '', page: null, store: '', scope: 'saleHong' };
 
   async function readFile(file) {
     let buf;
@@ -146,7 +146,7 @@
       const storeV = map.store != null ? textCell(row[map.store]) : '';
       if (S.store && storeV !== S.store) continue;
       const whV = map.loc != null ? textCell(row[map.loc]) : '';
-      if (S.onlySale && map.loc != null && whV.indexOf('销售仓') < 0) continue;
+      if (map.loc != null && !scopeMatch(whV)) continue;
       const it = {
         id: A.uid('it'),
         store: storeV,
@@ -172,14 +172,26 @@
       });
       out.push(it);
     }
-    return { items: out, dups: dups };
+    // 同一商品在多个仓都有货：合并成一条，数量相加、仓库拼接
+    const seenKey = new Map();
+    const merged = [];
+    out.forEach(function (it) {
+      const key = it.code ? 'c:' + String(it.code).toUpperCase()
+        : (it.barcodes[0] ? 'b:' + it.barcodes[0] : 'n:' + it.name + '|' + it.spec);
+      const t = seenKey.get(key);
+      if (!t) { seenKey.set(key, it); merged.push(it); return; }
+      if (it.book != null) t.book = (t.book == null ? 0 : t.book) + it.book;
+      if (it.loc && t.loc.indexOf(it.loc) < 0) t.loc = t.loc ? t.loc + ' / ' + it.loc : it.loc;
+      (it.barcodes || []).forEach(function (b) { if (t.barcodes.indexOf(b) < 0) t.barcodes.push(b); });
+    });
+    return { items: merged, dups: dups };
   }
 
   function countPreview() {
     const map = S.map;
-    let n = 0, noCode = 0;
     const rows = S.rows;
     const start = S.headerRow < 0 ? 0 : S.headerRow + 1;
+    const seen = new Map();
     for (let r = start; r < rows.length; r++) {
       const row = rows[r] || [];
       const name = map.name != null ? textCell(row[map.name]) : '';
@@ -189,21 +201,14 @@
       if (!name && !codes.length && !code) continue;
       if (/^(合计|总计|小计|共计|备注|说明)[:：]?$/.test(name)) continue;
       if (S.store && map.store != null && textCell(row[map.store]) !== S.store) continue;
-      if (S.onlySale && map.loc != null && textCell(row[map.loc]).indexOf('销售仓') < 0) continue;
-      n++;
-      if (!codes.length) noCode++;
+      if (map.loc != null && !scopeMatch(textCell(row[map.loc]))) continue;
+      const key = code ? 'c:' + code.toUpperCase() : (codes[0] ? 'b:' + codes[0] : 'n:' + name + '|' + (map.spec != null ? textCell(row[map.spec]) : ''));
+      if (seen.has(key)) continue;
+      seen.set(key, codes.length > 0);
     }
-    return { n: n, noCode: noCode };
-  }
-
-  function hasSaleWarehouse() {
-    if (S.map.loc == null) return false;
-    const start = S.headerRow < 0 ? 0 : S.headerRow + 1;
-    for (let r = start; r < Math.min(S.rows.length, start + 400); r++) {
-      const v = textCell((S.rows[r] || [])[S.map.loc]);
-      if (v.indexOf('销售仓') >= 0) return true;
-    }
-    return false;
+    let noCode = 0;
+    seen.forEach(function (has) { if (!has) noCode++; });
+    return { n: seen.size, noCode: noCode };
   }
 
   function storeValues() {
@@ -217,10 +222,26 @@
     return Array.from(set);
   }
 
+  function scopeMatch(w) {
+    if (S.scope === 'all') return true;
+    if (S.scope === 'sale') return w.indexOf('销售仓') >= 0;
+    return w.indexOf('销售仓') >= 0 || w.indexOf('洪哥仓') >= 0;
+  }
+
+  function hasSaleWarehouse() {
+    if (S.map.loc == null) return false;
+    const start = S.headerRow < 0 ? 0 : S.headerRow + 1;
+    for (let r = start; r < Math.min(S.rows.length, start + 400); r++) {
+      const v = textCell((S.rows[r] || [])[S.map.loc]);
+      if (v.indexOf('销售仓') >= 0 || v.indexOf('洪哥仓') >= 0) return true;
+    }
+    return false;
+  }
+
   function previewHTML() {
     const map = S.map;
     const cols = ['store', 'name', 'barcode', 'code', 'spec', 'book', 'loc'].filter((k) => map[k] != null);
-    if (!cols.length) return '<div class="hint">还没有选择任何列，请在上方指定「商品名称」对应哪一列。</div>';
+    if (!cols.length) return '<div class="hint">还没有选择任何列，请指定「商品名称」对应哪一列。</div>';
     let html = '<div style="overflow:auto;background:var(--card);border:1px solid var(--line);border-radius:12px"><table style="width:100%;border-collapse:collapse;font-size:11.5px;white-space:nowrap">';
     html += '<tr>' + cols.map((k) => '<th style="text-align:left;padding:7px 9px;color:var(--tx3);font-weight:600;border-bottom:1px solid var(--line)">' + A.esc((FIELDS.find((f) => f.k === k) || {}).label) + '</th>').join('') + '</tr>';
     let shown = 0;
@@ -228,10 +249,10 @@
     for (let r = start; r < S.rows.length && shown < 6; r++) {
       const row = S.rows[r] || [];
       const name = map.name != null ? textCell(row[map.name]) : '';
-      const hasAny = row.some((c) => String(c || '').trim() !== '');
-      if (!hasAny) continue;
-      if (S.store && map.store != null && textCell(row[map.store]) !== S.store) continue;
+      if (!row.some((c) => String(c || '').trim() !== '')) continue;
       if (/^(合计|总计|小计|共计)[:：]?$/.test(name)) continue;
+      if (S.store && map.store != null && textCell(row[map.store]) !== S.store) continue;
+      if (map.loc != null && !scopeMatch(textCell(row[map.loc]))) continue;
       html += '<tr>' + cols.map(function (k) {
         let v = row[map[k]];
         if (k === 'barcode') v = A.extractCodes(v).join(' / ');
@@ -241,8 +262,7 @@
       }).join('') + '</tr>';
       shown++;
     }
-    html += '</table></div>';
-    return html;
+    return html + '</table></div>';
   }
 
   function storeBlockHTML() {
@@ -306,7 +326,12 @@
       (S.map.barcode != null ? row('69 码', 'barcode') : '') +
       '</div>' +
       storeBlockHTML() +
-      (hasSaleWarehouse() ? '<label class="switch" style="margin:12px 0 2px;font-size:13px"><input type="checkbox" id="wSale"' + (S.onlySale ? ' checked' : '') + '> 只盘销售仓（跳过洪哥仓 / 在途 / 报废仓）</label>' : '') +
+      (hasSaleWarehouse() ? '<div class="field" style="margin-top:12px"><label>盘点哪些仓库</label>' +
+        '<select class="inp" id="wScope">' +
+        '<option value="saleHong"' + (S.scope === 'saleHong' ? ' selected' : '') + '>销售仓 + 洪哥仓（推荐）</option>' +
+        '<option value="sale"' + (S.scope === 'sale' ? ' selected' : '') + '>仅销售仓</option>' +
+        '<option value="all"' + (S.scope === 'all' ? ' selected' : '') + '>全部仓库（含报废仓 / 在途）</option>' +
+        '</select></div>' : '') +
       '<div class="sec-title">预览</div>' +
       '<div id="wPreview">' + previewSimple() + '</div>' +
       '<div class="note" id="wCount" style="margin-top:12px">将导入 <b>' + prev.n + '</b> 个商品，其中 <b>' + prev.noCode + '</b> 个没有 69 码。</div>' +
@@ -326,8 +351,8 @@
     };
     const stSel = $('#wStore', root);
     if (stSel) stSel.onchange = function () { S.store = stSel.value; refresh(); };
-    const saleChk = $('#wSale', root);
-    if (saleChk) saleChk.onchange = function () { S.onlySale = saleChk.checked; refresh(); };
+    const scopeSel = $('#wScope', root);
+    if (scopeSel) scopeSel.onchange = function () { S.scope = scopeSel.value; refresh(); };
     $('#wGo', root).onclick = doImport;
     $('#wAdv', root).onclick = function () { S.advanced = true; renderWizard(); };
   }
