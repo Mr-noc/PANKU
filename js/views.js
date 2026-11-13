@@ -305,12 +305,12 @@
       '<button class="btn" data-act="print-labels">' + A.icon('print') + ' 打印无69标签</button>' +
       '</div>' +
       '<div class="sec-title">差异商品（' + diffs.length + '）</div>' +
-      (diffs.length ? '<div class="rows">' + diffs.slice(0, 60).map(function (it) {
+      (diffs.length ? '<div class="rows">' + diffs.map(function (it) {
         const d = (Number(it.count) || 0) - (Number(it.book) || 0);
         return '<div class="row" data-open="' + it.id + '"><div class="grow"><div class="nm">' + A.esc(it.name) + '</div>' +
           '<div class="meta">账面 ' + (it.book == null ? '—' : A.fmt(it.book)) + ' · 实盘 ' + A.fmt(it.count) + '</div></div>' +
           '<span class="badge ' + (it.book == null ? 'warn' : d > 0 ? 'warn' : 'bad') + '">' + (it.book == null ? '新品' : (d > 0 ? '+' : '') + A.fmt(d)) + '</span></div>';
-      }).join('') + '</div>' + (diffs.length > 60 ? '<div class="hint" style="padding:6px 4px">只显示前 60 条，完整结果导出 Excel 查看</div>' : '') :
+      }).join('') + '</div>' :
         '<div class="empty" style="padding:24px">暂无差异</div>') +
       '<div class="sec-title">清单外条码（' + st.unknown + '）</div>' +
       (st.unknown ? '<div class="rows">' + S.session.unknown.map(function (u) {
@@ -700,7 +700,7 @@
       '<div class="row"><div class="grow"><div class="nm">保持屏幕常亮</div><div class="meta">扫码时不让屏幕熄灭</div></div><label class="switch"><input type="checkbox" data-s="wake"' + (s.wake ? ' checked' : '') + '></label></div>' +
       '</div>' +
       '<div class="hint" style="margin-top:12px">设置只影响这台手机上的浏览器。</div>' +
-      '<div class="hint" style="margin-top:6px;opacity:.7">版本 2.5 · 仓库范围版</div>' +
+      '<div class="hint" style="margin-top:6px;opacity:.7">版本 2.6 · 差异全显</div>' +
       '<button class="btn block" id="selfTest" style="margin-top:14px">识别诊断（把结果发我）</button>' +
       '<div class="hint" id="engineInfo" style="margin-top:8px"></div>' +
       '<button class="btn block" id="hardFix" style="margin-top:10px">修复加载 / 强制更新</button>' +
