@@ -102,6 +102,7 @@
     // 默认表头：检测不到时用第 1 行（若首行全空则从下一行）
     S.headerRow = detected >= 0 ? detected : 0;
     S.map = detectMap(rows, detected >= 0 ? detected : 0);
+    S.useScope = hasSaleWarehouse();
     if (S.map.name == null && rows[S.headerRow]) {
       // 没有识别到名称列：如果表头像表头行，退而求其次找最长文本列
       let best = -1, len = 0;
@@ -146,7 +147,7 @@
       const storeV = map.store != null ? textCell(row[map.store]) : '';
       if (S.store && storeV !== S.store) continue;
       const whV = map.loc != null ? textCell(row[map.loc]) : '';
-      if (map.loc != null && !scopeMatch(whV)) continue;
+      if (map.loc != null && S.useScope && !scopeMatch(whV)) continue;
       const it = {
         id: A.uid('it'),
         store: storeV,
@@ -201,7 +202,7 @@
       if (!name && !codes.length && !code) continue;
       if (/^(合计|总计|小计|共计|备注|说明)[:：]?$/.test(name)) continue;
       if (S.store && map.store != null && textCell(row[map.store]) !== S.store) continue;
-      if (map.loc != null && !scopeMatch(textCell(row[map.loc]))) continue;
+      if (map.loc != null && S.useScope && !scopeMatch(textCell(row[map.loc]))) continue;
       const key = code ? 'c:' + code.toUpperCase() : (codes[0] ? 'b:' + codes[0] : 'n:' + name + '|' + (map.spec != null ? textCell(row[map.spec]) : ''));
       if (seen.has(key)) continue;
       seen.set(key, codes.length > 0);
@@ -252,7 +253,7 @@
       if (!row.some((c) => String(c || '').trim() !== '')) continue;
       if (/^(合计|总计|小计|共计)[:：]?$/.test(name)) continue;
       if (S.store && map.store != null && textCell(row[map.store]) !== S.store) continue;
-      if (map.loc != null && !scopeMatch(textCell(row[map.loc]))) continue;
+      if (map.loc != null && S.useScope && !scopeMatch(textCell(row[map.loc]))) continue;
       html += '<tr>' + cols.map(function (k) {
         let v = row[map[k]];
         if (k === 'barcode') v = A.extractCodes(v).join(' / ');
