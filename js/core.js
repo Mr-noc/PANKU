@@ -105,7 +105,7 @@
     filter: 'all',
     q: '',
     q2: '',
-    settings: Object.assign({ sound: true, vibrate: true, dedupe: true, wake: true }, LS.get('panku.settings', {})),
+    settings: Object.assign({ sound: true, vibrate: true, dedupe: true, wake: true, only69: true }, LS.get('panku.settings', {})),
     idx: { bc: new Map(), cd: new Map() },
     undo: [],
     lastScan: null,
