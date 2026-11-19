@@ -395,11 +395,11 @@
 
   function onCode(raw) {
     const code = A.normCode(raw);
-    if (!code) return;
+    if (!code) return 'empty';
     const now = Date.now();
     if (S.settings.dedupe && code === st.lastCode && now - st.lastAt < 2000) {
       st.lastAt = now; // 画面里一直是这个码：不断顺延，移开后才允许再计
-      return;
+      return 'dup';
     }
     st.lastCode = code;
     st.lastAt = now;
@@ -411,11 +411,21 @@
       A.feedback('ok');
       A.updateScanCard();
       if (A.updateChrome) A.updateChrome();
-    } else {
-      A.feedback('bad');
-      pauseForDialog();
-      openUnknown(code);
+      return 'hit';
     }
+    // 清单外：只有 69 码才弹窗，二维码/其他码直接忽略
+    if (S.settings.only69 && !A.is69(code)) {
+      if (now - (st.lastIgnoredAt || 0) > 2500) {
+        st.lastIgnoredAt = now;
+        A.toast('不是 69 码，已忽略：' + code, null);
+      }
+      A.vibrate(10);
+      return 'ignored';
+    }
+    A.feedback('bad');
+    pauseForDialog();
+    openUnknown(code);
+    return 'unknown';
   }
 
   function pauseForDialog() {
@@ -661,9 +671,14 @@
         A.toast('正在识别图片里的条码…');
         const code = await decodeImageFile(f);
         if (code) {
-          A.handleScannedCode(code);
-          A.feedback('ok');
-          A.toast('识别成功：' + code, 'ok');
+          const r = A.handleScannedCode(code);
+          if (r === 'hit') {
+            A.feedback('ok');
+            A.toast('识别成功：' + code, 'ok');
+          } else if (r === 'ignored') {
+            A.feedback('bad');
+            A.toast('这个不是 69 码，已忽略', 'bad');
+          }
         } else {
           A.feedback('bad');
           A.toast('图片里没找到条码：让条码占满画面、光线足、对焦清楚再拍', 'bad');
