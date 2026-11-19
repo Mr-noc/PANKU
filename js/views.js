@@ -696,11 +696,12 @@
       '<div class="rows">' +
       '<div class="row"><div class="grow"><div class="nm">提示音</div><div class="meta">扫到商品时“嘀”一声</div></div><label class="switch"><input type="checkbox" data-s="sound"' + (s.sound ? ' checked' : '') + '></label></div>' +
       '<div class="row"><div class="grow"><div class="nm">震动</div><div class="meta">识别成功/失败时轻震</div></div><label class="switch"><input type="checkbox" data-s="vibrate"' + (s.vibrate ? ' checked' : '') + '></label></div>' +
+      '<div class="row"><div class="grow"><div class="nm">只弹 69 码</div><div class="meta">扫到二维码/其他码时忽略，不弹新建窗口</div></div><label class="switch"><input type="checkbox" data-s="only69"' + (s.only69 ? ' checked' : '') + '></label></div>' +
       '<div class="row"><div class="grow"><div class="nm">防连扫</div><div class="meta">同一个码移开后 2 秒才再计</div></div><label class="switch"><input type="checkbox" data-s="dedupe"' + (s.dedupe ? ' checked' : '') + '></label></div>' +
       '<div class="row"><div class="grow"><div class="nm">保持屏幕常亮</div><div class="meta">扫码时不让屏幕熄灭</div></div><label class="switch"><input type="checkbox" data-s="wake"' + (s.wake ? ' checked' : '') + '></label></div>' +
       '</div>' +
       '<div class="hint" style="margin-top:12px">设置只影响这台手机上的浏览器。</div>' +
-      '<div class="hint" style="margin-top:6px;opacity:.7">版本 2.6 · 差异全显</div>' +
+      '<div class="hint" style="margin-top:6px;opacity:.7">版本 2.7 · 只认69</div>' +
       '<button class="btn block" id="selfTest" style="margin-top:14px">识别诊断（把结果发我）</button>' +
       '<div class="hint" id="engineInfo" style="margin-top:8px"></div>' +
       '<button class="btn block" id="hardFix" style="margin-top:10px">修复加载 / 强制更新</button>' +
