@@ -701,7 +701,7 @@
       '<div class="row"><div class="grow"><div class="nm">保持屏幕常亮</div><div class="meta">扫码时不让屏幕熄灭</div></div><label class="switch"><input type="checkbox" data-s="wake"' + (s.wake ? ' checked' : '') + '></label></div>' +
       '</div>' +
       '<div class="hint" style="margin-top:12px">设置只影响这台手机上的浏览器。</div>' +
-      '<div class="hint" style="margin-top:6px;opacity:.7">版本 2.8 · 导出提示</div>' +
+      '<div class="hint" style="margin-top:6px;opacity:.7">版本 2.9 · 文本导出</div>' +
       '<button class="btn block" id="selfTest" style="margin-top:14px">识别诊断（把结果发我）</button>' +
       '<div class="hint" id="engineInfo" style="margin-top:8px"></div>' +
       '<button class="btn block" id="hardFix" style="margin-top:10px">修复加载 / 强制更新</button>' +
@@ -873,6 +873,10 @@
       '<div class="row" data-x="handover"><span style="color:var(--warn);width:20px;display:grid;place-items:center">' + A.icon('upload') + '</span><div class="grow"><div class="nm">导出交接文件（.json）</div><div class="meta">给店长汇总用，只有条码和数量</div></div><span style="color:var(--tx3)">›</span></div>' +
       '<div class="row" data-x="merge"><span style="color:var(--acc);width:20px;display:grid;place-items:center">' + A.icon('download') + '</span><div class="grow"><div class="nm">合并多台手机的结果</div><div class="meta">选多个交接文件，自动比对数量</div></div><span style="color:var(--tx3)">›</span></div>' +
       '</div>' +
+      '<div class="sec-title">微信里下载被拦？用复制</div>' +
+      '<button class="btn block" data-x="copyall">复制全部结果（文本）</button>' +
+      '<button class="btn block" data-x="copydiff" style="margin-top:8px">只复制差异商品（文本）</button>' +
+      '<div class="hint" style="margin-top:6px">复制后直接粘贴到微信聊天，发给自己或电脑。</div>' +
       '<div class="hint" style="margin-top:12px">当前 ' + st.total + ' 个品项，已盘 ' + st.counted + '，差异 ' + st.diff + '。</div>';
     A.sheet({ title: '导出结果', body: body, onMount: function (b) {
       A.$$('[data-x]', b).forEach(function (row) {
@@ -883,6 +887,8 @@
             if (k === 'csv') A.exportCSV();
             else if (k === 'handover') A.exportHandover();
             else if (k === 'merge') A.openMerge();
+            else if (k === 'copyall') A.copyResult(false);
+            else if (k === 'copydiff') A.copyResult(true);
             else A.exportXLSX();
           }, 160);
         };
