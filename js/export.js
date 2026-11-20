@@ -158,6 +158,100 @@
     }
   };
 
+  /* ---------- 微信 → 其他浏览器：剪贴板中转 ---------- */
+  A.buildTransferText = function () {
+    const sess = S.session;
+    if (!sess) return '';
+    const payload = {
+      app: 'panku-transfer', version: 1,
+      store: sess.name || '', savedAt: Date.now(),
+      items: sess.items.map(function (it) {
+        return {
+          n: it.name || '', s: it.spec || '', u: it.unit || '',
+          c: it.code || '', b: it.barcodes || [], a: it.altCodes || [],
+          l: it.loc || '', k: it.book == null ? null : it.book,
+          q: it.count == null ? null : it.count, t: it.store || '',
+        };
+      }),
+    };
+    return JSON.stringify(payload);
+  };
+
+  A.copyTransfer = async function () {
+    const text = A.buildTransferText();
+    if (!text) { A.toast('没有可复制的盘点', 'bad'); return; }
+    const size = (text.length / 1024).toFixed(0);
+    try {
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        await navigator.clipboard.writeText(text);
+        A.toast('已复制整份盘点（' + size + 'KB）。切到 Chrome 打开同一个 App，点「从剪贴板接收」', 'ok');
+        return;
+      }
+    } catch (e) {}
+    A.sheet({
+      title: '复制盘点数据',
+      body: '<div class="hint" style="margin-bottom:8px">长按全选 → 复制，然后切到 Chrome 粘贴接收。</div>' +
+        '<textarea id="trArea" readonly style="width:100%;height:46vh;background:#0e1520;color:var(--tx);border:1px solid var(--line);border-radius:12px;padding:10px;font-size:11px">' + A.esc(text) + '</textarea>',
+      onMount: function (b) {
+        const a = b.querySelector('#trArea');
+        setTimeout(function () { a.focus(); a.select(); }, 200);
+        a.onclick = function () { a.select(); };
+      },
+    });
+  };
+
+  A.importTransferText = function (text) {
+    let d = null;
+    try { d = JSON.parse(String(text || '').trim()); } catch (e) {
+      A.toast('内容不是有效的盘点数据', 'bad');
+      return false;
+    }
+    if (!d || d.app !== 'panku-transfer' || !Array.isArray(d.items)) {
+      A.toast('内容不是盘库的交接数据', 'bad');
+      return false;
+    }
+    const sess = A.newSession((d.store || '盘点') + ' · 转入');
+    sess.source = '剪贴板转入';
+    sess.items = d.items.map(function (x) {
+      return {
+        id: A.uid('it'), name: x.n || '未命名商品', spec: x.s || '', unit: x.u || '',
+        code: x.c || '', barcodes: (x.b || []).map(A.normCode).filter(Boolean),
+        altCodes: x.a || [], loc: x.l || '', book: x.k == null ? null : x.k,
+        count: x.q == null ? null : x.q, note: '', photo: null,
+        manual: false, isNew: false, store: x.t || '',
+      };
+    });
+    A.openSession(sess);
+    A.flush();
+    A.closeSheet();
+    A.render();
+    A.toast('已接收 ' + sess.items.length + ' 个商品，可以在 Chrome 里导出了', 'ok');
+    return true;
+  };
+
+  A.receiveTransfer = async function () {
+    let text = '';
+    try {
+      if (navigator.clipboard && navigator.clipboard.readText) text = await navigator.clipboard.readText();
+    } catch (e) {}
+    if (text && text.indexOf('panku-transfer') >= 0) {
+      A.importTransferText(text);
+      return;
+    }
+    A.sheet({
+      title: '从剪贴板接收盘点',
+      body: '<div class="hint" style="margin-bottom:8px">先复制微信浏览器里的盘点数据，然后长按下面的框粘贴，再点「导入」。</div>' +
+        '<textarea id="rcvArea" placeholder="在这里长按粘贴" style="width:100%;height:40vh;background:#0e1520;color:var(--tx);border:1px solid var(--line);border-radius:12px;padding:10px;font-size:11px"></textarea>' +
+        '<button class="btn primary block" id="rcvGo" style="margin-top:10px">导入</button>',
+      onMount: function (b) {
+        const a = b.querySelector('#rcvArea');
+        const go = b.querySelector('#rcvGo');
+        go.onclick = function () { A.importTransferText(a.value); };
+        setTimeout(function () { a.focus(); }, 250);
+      },
+    });
+  };
+
   function cell(v) {
     return String(v == null ? '' : v).replace(/[\t\r\n]+/g, ' ').trim();
   }
