@@ -158,6 +158,45 @@
     }
   };
 
+  function cell(v) {
+    return String(v == null ? '' : v).replace(/[\t\r\n]+/g, ' ').trim();
+  }
+
+  A.resultText = function (onlyDiff) {
+    if (!S.session) return '';
+    const rows = [['门店', '商品名称', '编码', '货位', '账面', '实盘', '差异', '状态']];
+    S.session.items.forEach(function (it) {
+      if (onlyDiff && !A.isDiff(it)) return;
+      const diff = it.count == null ? '' : (it.book == null ? Number(it.count) : Number(it.count) - Number(it.book));
+      rows.push([it.store || '', it.name || '', (it.barcodes || [])[0] || it.code || '', it.loc || '',
+        it.book == null ? '' : it.book, it.count == null ? '' : it.count, diff, statusOf(it)]);
+    });
+    return rows.map(function (r) { return r.map(cell).join('\t'); }).join('\n');
+  };
+
+  A.copyResult = async function (onlyDiff) {
+    const text = A.resultText(onlyDiff);
+    if (!text) { A.toast('没有可复制的内容', 'bad'); return; }
+    const tip = onlyDiff ? '差异商品' : '全部结果';
+    try {
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        await navigator.clipboard.writeText(text);
+        A.toast('已复制' + tip + '（' + (text.length / 1024).toFixed(0) + 'KB），去微信粘贴即可', 'ok');
+        return;
+      }
+    } catch (e) {}
+    A.sheet({
+      title: '复制' + tip,
+      body: '<div class="hint" style="margin-bottom:8px">长按下面的文字 → 全选 → 复制，然后粘贴到微信。</div>' +
+        '<textarea id="copyArea" readonly style="width:100%;height:46vh;background:#0e1520;color:var(--tx);border:1px solid var(--line);border-radius:12px;padding:10px;font-size:12px;font-family:ui-monospace,monospace">' + A.esc(text) + '</textarea>',
+      onMount: function (b) {
+        const a = b.querySelector('#copyArea');
+        setTimeout(function () { a.focus(); a.select(); }, 200);
+        a.onclick = function () { a.select(); };
+      },
+    });
+  };
+
   A.exportCSV = function () {
     if (!S.session || !S.session.items.length) { A.toast('清单是空的，先导入表格', 'bad'); return; }
     try {
