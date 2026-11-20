@@ -69,7 +69,7 @@
     if (!base) return null;
     const merged = JSON.parse(JSON.stringify(base));
     merged.id = A.uid('s');
-    merged.name = String(base.name || '盘点').replace(/(\s*·\s*合并)+\s*$/g, '').trim() + ' · 合并';
+    merged.name = A.cleanName(base.name) + ' · 合并';
     merged.createdAt = Date.now();
     merged.updatedAt = Date.now();
     merged.mergeSources = [];
