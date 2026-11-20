@@ -179,6 +179,16 @@
   A.is69 = (code) => /^69\d{11}$/.test(String(code || ''));
 
   /* ---------------- 会话 ---------------- */
+  A.cleanName = function (n) {
+    let s = String(n == null || n === '' ? '盘点' : n).trim();
+    for (let i = 0; i < 20; i++) {
+      const t = s.replace(/[\s·•・\-—_]*合并[\s·•・\-—_]*$/g, '').trim();
+      if (t === s) break;
+      s = t;
+    }
+    return s || '盘点';
+  };
+
   A.newSession = function (name) {
     return {
       id: A.uid('s'),
@@ -193,6 +203,7 @@
   };
 
   A.openSession = function (sess) {
+    sess.name = A.cleanName(sess.name);
     S.session = sess;
     S.tab = 'scan';
     S.filter = 'all';
@@ -230,7 +241,7 @@
       list = LS.get('panku.sessions', []);
     }
     A.state.sessions = list.map((s) => ({
-      id: s.id, name: s.name, updatedAt: s.updatedAt,
+      id: s.id, name: A.cleanName(s.name), updatedAt: s.updatedAt,
       n: (s.items || []).length,
       counted: (s.items || []).filter((i) => i.count != null).length,
     })).sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
