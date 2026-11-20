@@ -102,6 +102,7 @@
       '<p class="lead">导入表格清单 → 扫 <b>69 码</b> 自动累加。<br>没有条码的商品，也能手工盘、拍照认、贴内部码。</p>' +
       '<label class="w-card" for="fileIn" data-import="new"><span class="wc-ico">' + A.icon('upload') + '</span><span><span class="wc-t">导入 Excel / CSV 清单</span><span class="wc-d">自动识别表头，指定名称、69 码、账面数量等列</span></span></label>' +
       '<button class="w-card" data-w="new"><span class="wc-ico">' + A.icon('plus') + '</span><span><span class="wc-t">新建空白盘点</span><span class="wc-d">先扫码收新品，或稍后再导入清单</span></span></button>' +
+      '<button class="w-card" data-w="receive"><span class="wc-ico">' + A.icon('upload') + '</span><span><span class="wc-t">从剪贴板接收盘点</span><span class="wc-d">把微信浏览器里的盘点转到这个浏览器</span></span></button>' +
       (hasSessions ? '<button class="w-card" data-w="open"><span class="wc-ico">' + A.icon('list') + '</span><span><span class="wc-t">打开历史盘点（' + S.sessions.length + '）</span><span class="wc-d">' + A.esc(S.sessions[0].name) + ' · 已盘 ' + S.sessions[0].counted + '/' + S.sessions[0].n + '</span></span></button>' : '') +
       '<div class="foot-note">全部数据保存在这台手机上 · 离线可用<br>支持 .xlsx / .xls / .csv</div>' +
       '<div style="text-align:center;margin-top:10px"><button class="btn sm ghost" id="welFix">打不开 / 导入没反应？点此修复</button></div>' +
@@ -121,6 +122,7 @@
           A.render();
           A.toast('空白盘点已建好，点右上角导入清单', 'ok');
         } else if (w === 'open') A.openSessions();
+        else if (w === 'receive') A.receiveTransfer();
       };
     });
   }
@@ -663,6 +665,7 @@
       '<div class="rows">' +
       row('tasks', 'list', '盘点任务', '切换 / 新建 / 删除') +
       row('import', 'upload', '导入另一张清单', '追加或新建') +
+      row('receive', 'upload', '从剪贴板接收盘点', '把微信里的盘点转到这个浏览器') +
       row('merge', 'download', '合并多台手机的结果', '汇总其他店员的交接文件') +
       row('export', 'download', '导出盘点结果', 'Excel / CSV / 交接文件') +
       row('labels', 'print', '打印无69商品标签', '生成内部码，贴到商品上') +
@@ -680,6 +683,7 @@
             else if (m === 'import') A.openImport();
             else if (m === 'export') A.openExport();
             else if (m === 'merge') A.openMerge();
+            else if (m === 'receive') A.receiveTransfer();
             else if (m === 'labels') A.printLabels(null);
             else if (m === 'help') A.openHelp();
             else if (m === 'settings') A.openSettings();
@@ -875,6 +879,7 @@
       '<div class="sec-title">微信里下载被拦？用复制</div>' +
       '<button class="btn block" data-x="copyall">复制全部结果（文本）</button>' +
       '<button class="btn block" data-x="copydiff" style="margin-top:8px">只复制差异商品（文本）</button>' +
+      '<button class="btn block primary" data-x="copytransfer" style="margin-top:10px">复制整份盘点（换浏览器用）</button>' +
       '<div class="hint" style="margin-top:6px">复制后直接粘贴到微信聊天，发给自己或电脑。</div>' +
       '<div class="hint" style="margin-top:12px">当前 ' + st.total + ' 个品项，已盘 ' + st.counted + '，差异 ' + st.diff + '。</div>';
     A.sheet({ title: '导出结果', body: body, onMount: function (b) {
@@ -888,6 +893,7 @@
             else if (k === 'merge') A.openMerge();
             else if (k === 'copyall') A.copyResult(false);
             else if (k === 'copydiff') A.copyResult(true);
+            else if (k === 'copytransfer') A.copyTransfer();
             else A.exportXLSX();
           }, 160);
         };
