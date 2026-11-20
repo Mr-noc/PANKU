@@ -701,7 +701,7 @@
       '<div class="row"><div class="grow"><div class="nm">保持屏幕常亮</div><div class="meta">扫码时不让屏幕熄灭</div></div><label class="switch"><input type="checkbox" data-s="wake"' + (s.wake ? ' checked' : '') + '></label></div>' +
       '</div>' +
       '<div class="hint" style="margin-top:12px">设置只影响这台手机上的浏览器。</div>' +
-      '<div class="hint" style="margin-top:6px;opacity:.7">版本 2.7 · 只认69</div>' +
+      '<div class="hint" style="margin-top:6px;opacity:.7">版本 2.8 · 导出提示</div>' +
       '<button class="btn block" id="selfTest" style="margin-top:14px">识别诊断（把结果发我）</button>' +
       '<div class="hint" id="engineInfo" style="margin-top:8px"></div>' +
       '<button class="btn block" id="hardFix" style="margin-top:10px">修复加载 / 强制更新</button>' +
@@ -866,7 +866,7 @@
   A.openExport = function () {
     const st = A.stats();
     const body =
-      '<div class="note" style="margin-bottom:12px">导出包含：盘点明细（账面/实盘/差异）、差异表、清单外条码。文件会下载到手机「下载」目录。</div>' +
+      '<div class="note" style="margin-bottom:12px">导出包含：盘点明细（账面/实盘/差异）、差异表、清单外条码。导出后会显示文件名和保存位置。</div>' +
       '<div class="rows">' +
       '<div class="row" data-x="xlsx"><span style="color:var(--acc);width:20px;display:grid;place-items:center">' + A.icon('download') + '</span><div class="grow"><div class="nm">Excel（.xlsx）</div><div class="meta">3 个工作表，可直接发微信</div></div><span style="color:var(--tx3)">›</span></div>' +
       '<div class="row" data-x="csv"><span style="color:var(--tx2);width:20px;display:grid;place-items:center">' + A.icon('list') + '</span><div class="grow"><div class="nm">CSV（.csv）</div><div class="meta">通用格式，表格软件都能开</div></div><span style="color:var(--tx3)">›</span></div>' +
