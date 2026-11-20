@@ -3,6 +3,53 @@
   const A = window.A;
   const S = A.state;
 
+  function anchorDownload(blob, name) {
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = name;
+    document.body.appendChild(a);
+    a.click();
+    setTimeout(function () { a.remove(); URL.revokeObjectURL(url); }, 5000);
+  }
+
+  A.deliverFile = function (blob, name, kind) {
+    let file = null;
+    try { file = new File([blob], name, { type: blob.type || 'application/octet-stream' }); } catch (e) {}
+    const size = blob.size >= 1048576 ? (blob.size / 1048576).toFixed(1) + ' MB' : Math.max(1, Math.round(blob.size / 1024)) + ' KB';
+    let canShare = false;
+    try { canShare = !!(file && navigator.canShare && navigator.share && navigator.canShare({ files: [file] })); } catch (e) {}
+    const body =
+      '<div class="card" style="margin-bottom:12px">' +
+      '<div style="font-size:12px;color:var(--tx3)">文件名</div>' +
+      '<div style="font-size:14px;font-weight:700;word-break:break-all;margin:2px 0 8px">' + A.esc(name) + '</div>' +
+      '<div style="font-size:12px;color:var(--tx3)">大小</div><div style="font-size:13px;margin-bottom:8px">' + size + '</div>' +
+      '<div style="font-size:12px;color:var(--tx3)">保存位置</div>' +
+      '<div style="font-size:13px">手机「下载 / Download」目录<br><span style="color:var(--tx3);font-size:11.5px">浏览器默认下载位置，用文件管理器按文件名搜最快</span></div>' +
+      '</div>' +
+      (canShare ? '<button class="btn primary block lg" id="dlShare">分享 / 保存到手机</button>' : '') +
+      '<button class="btn block' + (canShare ? '' : ' primary lg') + '" id="dlAgain" style="margin-top:8px">直接下载</button>' +
+      '<div class="hint" style="margin-top:10px">找不到文件？点「' + (canShare ? '分享 / 保存到手机' : '直接下载') + '」。在微信里打开的话，建议先点右上角「在浏览器打开」再导出。</div>';
+
+    A.sheet({ title: '导出完成', body: body, onMount: function (b) {
+      const dl = b.querySelector('#dlAgain');
+      if (dl) dl.onclick = function () {
+        anchorDownload(blob, name);
+        A.toast('已下载：' + name, 'ok');
+      };
+      const sh = b.querySelector('#dlShare');
+      if (sh) sh.onclick = async function () {
+        try {
+          await navigator.share({ files: [file], title: name });
+          A.toast('已发送', 'ok');
+        } catch (e) {
+          if (e && e.name !== 'AbortError') A.toast('分享失败：' + (e.message || e), 'bad');
+        }
+      };
+    } });
+    if (kind === 'xlsx') anchorDownload(blob, name); // 同时先自动下一次
+  };
+
   function safeName(s) {
     return String(s || '盘点').replace(/[\\/:*?"<>|\n\r\t]/g, '_').replace(/\s+/g, ' ').trim().slice(0, 40) || '盘点';
   }
@@ -102,8 +149,9 @@
       XLSX.utils.book_append_sheet(wb, ws4, '汇总');
 
       const name = '盘点_' + safeName(S.session.name) + '_' + stamp() + '.xlsx';
-      XLSX.writeFile(wb, name, { compression: true });
-      A.toast('已导出 ' + name, 'ok');
+      const out = XLSX.write(wb, { bookType: 'xlsx', type: 'array', compression: true });
+      const blob = new Blob([out], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+      A.deliverFile(blob, name, 'xlsx');
     } catch (e) {
       console.error(e);
       A.toast('导出失败：' + e.message, 'bad');
@@ -120,15 +168,9 @@
           return /[",\n\r]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
         }).join(',');
       }).join('\r\n');
+      const name = '盘点_' + safeName(S.session.name) + '_' + stamp() + '.csv';
       const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = '盘点_' + safeName(S.session.name) + '_' + stamp() + '.csv';
-      document.body.appendChild(a);
-      a.click();
-      setTimeout(function () { a.remove(); URL.revokeObjectURL(url); }, 4000);
-      A.toast('已导出 CSV', 'ok');
+      A.deliverFile(blob, name, 'csv');
     } catch (e) {
       A.toast('导出失败：' + e.message, 'bad');
     }
