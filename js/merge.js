@@ -49,8 +49,7 @@
       }),
     };
     const name = '盘库交接_' + safe(sess.name) + '_' + safe(device) + '_' + stamp() + '.json';
-    download(new Blob([JSON.stringify(payload)], { type: 'application/json' }), name);
-    A.toast('已导出交接文件：' + name, 'ok');
+    A.deliverFile(new Blob([JSON.stringify(payload)], { type: 'application/json' }), name, 'json');
   };
 
   /* ---------- 合并 ---------- */
