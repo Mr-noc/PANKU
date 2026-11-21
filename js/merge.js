@@ -31,20 +31,37 @@
       S.settings.deviceName = device;
       A.saveSettings();
     }
+    let deviceId = A.LS.get('panku.deviceId', '');
+    if (!deviceId) {
+      deviceId = 'd_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+      A.LS.set('panku.deviceId', deviceId);
+    }
+    const seq = (A.LS.get('panku.handoverSeq', 0) || 0) + 1;
+    A.LS.set('panku.handoverSeq', seq);
     const payload = {
       app: 'panku-handover',
-      version: 1,
+      v: 2,
       store: sess.name || '',
       device: device,
+      deviceId: deviceId,
+      sessionId: sess.id,
+      seq: seq,
       exportedAt: Date.now(),
-      session: sess.name || '',
+      zoneMap: sess.zoneMap || {},
+      zoneDone: sess.zoneDone || {},
       items: sess.items.map(function (it) {
         return {
           barcodes: it.barcodes || [],
           code: it.code || '',
           name: it.name || '',
           spec: it.spec || '',
+          unit: it.unit || '',
+          loc: it.loc || '',
+          book: it.book == null ? null : Number(it.book),
           count: it.count == null ? null : Number(it.count),
+          unzoned: it.unzoned == null ? null : Number(it.unzoned),
+          zones: it.zones || {},
+          zonesDone: it.zonesDone || {},
         };
       }),
     };
@@ -75,69 +92,160 @@
     merged.mergeSources = [];
     merged.items.forEach(function (it) {
       it.mergeConflict = null;
+      it.mergeReasons = [];
       it.count = null;
+      it.unzoned = null;
+      it.zones = {};
       it.countedAt = null;
     });
+
+    // 1) 设备级去重：同一设备同一盘点重复导出，只留 seq 最大的一份
+    const seen = new Map();
+    (files || []).forEach(function (f) {
+      if (!f || !Array.isArray(f.items)) return;
+      const key = (f.deviceId || f.device || 'dev') + '|' + (f.sessionId || f.exportedAt || '0');
+      const prev = seen.get(key);
+      if (!prev || (f.seq || 0) >= (prev.seq || 0)) seen.set(key, f);
+    });
+    const list = Array.from(seen.values());
+    merged.zoneMap = Object.assign({}, base.zoneMap || {});
+    list.forEach(function (f) { merged.zoneMap = Object.assign(merged.zoneMap, f.zoneMap || {}); });
 
     const idx = new Map();
     merged.items.forEach(function (it) {
       keysOf(it).forEach(function (k) { if (!idx.has(k)) idx.set(k, it); });
     });
 
-    const buckets = new Map(); // item.id -> [{device,count}]
-    const addValue = function (it, device, count) {
-      if (count == null || !isFinite(count)) return;
+    const buckets = new Map();
+    function hasZones(z) { return !!(z && Object.keys(z).length); }
+    function addValue(it, device, rec) {
+      if (rec.count == null && !hasZones(rec.zones)) return;
       if (!buckets.has(it.id)) buckets.set(it.id, []);
-      buckets.get(it.id).push({ device: device, count: Number(count) });
-    };
+      buckets.get(it.id).push({
+        device: device,
+        count: rec.count == null ? null : Number(rec.count),
+        zones: rec.zones || {},
+        unzoned: rec.unzoned == null ? null : Number(rec.unzoned),
+      });
+    }
+    function match(fi) {
+      for (const k of keysOf(fi)) {
+        if (k.indexOf('n:') === 0) {
+          const t = idx.get(k);
+          if (t && !(t.barcodes || []).length && !t.code && !(fi.barcodes || []).length && !fi.code) return t;
+          continue;
+        }
+        if (idx.has(k)) return idx.get(k);
+      }
+      return null;
+    }
 
-    // 本机
+    // 本机作为一台设备
     const cloneById = new Map(merged.items.map((x) => [x.id, x]));
     base.items.forEach(function (it) {
-      if (it.count != null) addValue(cloneById.get(it.id) || it, '本机', it.count);
+      if (it.count == null && !hasZones(it.zones)) return;
+      addValue(cloneById.get(it.id) || it, '本机', { count: it.count, zones: it.zones, unzoned: it.unzoned });
     });
 
     // 其他人的交接文件
-    files.forEach(function (f) {
+    list.forEach(function (f) {
       const dev = f.device || '未命名';
       (f.items || []).forEach(function (fi) {
-        if (fi.count == null) return;
-        let target = null;
-        for (const k of keysOf(fi)) {
-          if (idx.has(k)) { target = idx.get(k); break; }
-        }
+        if (fi.count == null && !hasZones(fi.zones)) return;
+        let target = match(fi);
         if (!target) {
           target = {
             id: A.uid('it'), store: base.store || '', name: fi.name || '未命名商品',
-            spec: fi.spec || '', unit: '', code: fi.code || '',
+            spec: fi.spec || '', unit: fi.unit || '', code: fi.code || '',
             barcodes: (fi.barcodes || []).map(A.normCode).filter(Boolean),
-            altCodes: [], loc: '', book: null, count: null, note: '', photo: null,
-            manual: false, isNew: true, mergeConflict: null,
+            altCodes: [], loc: fi.loc || '', book: fi.book == null ? null : fi.book,
+            count: null, zones: {}, zonesDone: {}, unzoned: null,
+            note: '', photo: null, manual: false, isNew: true,
+            mergeConflict: null, mergeReasons: [],
           };
           merged.items.push(target);
           keysOf(target).forEach(function (k) { if (!idx.has(k)) idx.set(k, target); });
         }
-        addValue(target, dev, fi.count);
+        addValue(target, dev, { count: fi.count, zones: fi.zones, unzoned: fi.unzoned });
       });
-      merged.mergeSources.push({ device: dev, at: f.exportedAt || 0 });
+      merged.mergeSources.push({ device: dev, at: f.exportedAt || 0, seq: f.seq || 0 });
     });
 
+    // 2) 逐商品聚合
     let conflicts = 0;
+    const zoneCov = {};
     merged.items.forEach(function (it) {
-      const vals = buckets.get(it.id);
-      if (!vals || !vals.length) return;
-      const uniq = Array.from(new Set(vals.map((v) => v.count)));
-      if (uniq.length === 1) {
-        it.count = uniq[0];
-        it.countedAt = Date.now();
-        it.mergeConflict = null;
-      } else {
-        it.count = null;
-        it.mergeConflict = vals;
+      const srcs = buckets.get(it.id);
+      if (!srcs || !srcs.length) return;
+      const zoned = srcs.filter(function (s) { return hasZones(s.zones); });
+      const plain = srcs.filter(function (s) { return !hasZones(s.zones); });
+
+      if (!zoned.length) {
+        // 全未分区：沿用老逻辑（同值采纳，异值待核）
+        const vals = srcs.map(function (s) { return s.count; });
+        const uniq = Array.from(new Set(vals));
+        if (uniq.length === 1) {
+          it.count = uniq[0];
+          it.unzoned = uniq[0];
+          it.countedAt = Date.now();
+        } else {
+          it.count = null;
+          it.mergeConflict = srcs.map(function (s) { return { device: s.device, count: s.count }; });
+          conflicts++;
+        }
+        return;
+      }
+
+      // 跨区相加；同区多设备取最大值并标待核
+      const byZone = {};
+      zoned.forEach(function (s) {
+        Object.keys(s.zones).forEach(function (z) {
+          const v = Number(s.zones[z]) || 0;
+          (byZone[z] = byZone[z] || []).push({ device: s.device, count: v });
+          if (!zoneCov[z]) zoneCov[z] = { devices: new Set(), items: new Set() };
+          zoneCov[z].devices.add(s.device);
+          if (v !== 0) zoneCov[z].items.add(it.id);
+        });
+      });
+      let total = 0;
+      const adopted = {};
+      const cf = [];
+      Object.keys(byZone).forEach(function (z) {
+        const vals = byZone[z];
+        const uniq = Array.from(new Set(vals.map(function (v) { return v.count; })));
+        const v = uniq.length === 1 ? uniq[0] : Math.max.apply(null, uniq);
+        adopted[z] = v;
+        total += v;
+        if (uniq.length > 1) cf.push({ zone: z, sources: vals, adopted: v });
+      });
+      it.zones = adopted;
+      it.count = Math.round(total * 1000) / 1000;
+      it.countedAt = Date.now();
+
+      if (cf.length) {
+        it.mergeConflict = [];
+        cf.forEach(function (c) {
+          c.sources.forEach(function (s) { it.mergeConflict.push({ device: s.device, count: s.count, zone: c.zone }); });
+        });
+        conflicts++;
+      }
+      if (plain.length) {
+        it.mergeConflict = it.mergeConflict || [];
+        plain.forEach(function (s) { it.mergeConflict.push({ device: s.device, count: s.count, zone: '', note: '未分区' }); });
+        it.mergeReasons = (it.mergeReasons || []).concat('mixed');
         conflicts++;
       }
     });
-    merged.mergeStats = { files: files.length, conflicts: conflicts, items: merged.items.length };
+
+    merged.mergeStats = {
+      files: list.length,
+      conflicts: conflicts,
+      items: merged.items.length,
+      zones: Object.keys(zoneCov).length,
+    };
+    merged.mergeZoneCov = Object.keys(zoneCov).map(function (z) {
+      return { zone: z, label: merged.zoneMap[z] || z, devices: Array.from(zoneCov[z].devices), items: zoneCov[z].items.size };
+    });
     return merged;
   };
 
@@ -152,7 +260,7 @@
       '<button class="btn primary block" id="mPick">选择交接文件（可多选）</button>' +
       '<input type="file" id="mFiles" accept=".json,application/json" multiple hidden>' +
       '<div id="mList" style="margin-top:14px"></div>' +
-      '<div class="note" style="margin-top:14px">合并规则：同一个商品，多人盘的数量<b>一致</b>就直接采纳；<b>不一致</b>就标成「待核对」，由你人工确认。</div>' +
+      '<div class="note" style="margin-top:14px">合并规则：同一商品<b>不同区域</b>的数量相加；<b>同一区域</b>多人盘的数量取最大值并标「待核对」；没扫区域码的按老规则（同值采纳 / 异值冲突）。</div>' +
       '<button class="btn primary block lg" id="mGo" disabled style="margin-top:12px">开始合并</button>';
     const page = A.page({ title: '合并多台手机的结果', body: body });
     const listEl = body.querySelector('#mList');
@@ -163,9 +271,10 @@
       if (!picked.length) { listEl.innerHTML = '<div class="hint">还没有选择文件</div>'; go.disabled = true; return; }
       listEl.innerHTML = '<div class="rows">' + picked.map(function (f, i) {
         const counted = (f.items || []).filter((x) => x.count != null).length;
+        const zn = Object.keys(f.zoneMap || {}).length;
         return '<div class="row"><div class="grow"><div class="nm">' + A.esc(f.device || '未命名') + ' · ' + A.esc(f.store || '') + '</div>' +
           '<div class="meta">' + new Date(f.exportedAt || Date.now()).toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }) +
-          ' · 已盘 ' + counted + ' 个</div></div>' +
+          ' · 已盘 ' + counted + ' 个' + (zn ? ' · ' + zn + ' 个区' : ' · 未分区') + '</div></div>' +
           '<button class="icon-btn" data-rm="' + i + '">×</button></div>';
       }).join('') + '</div>';
       A.$$('[data-rm]', listEl).forEach(function (b) {
@@ -200,8 +309,9 @@
       A.flush();
       A.closePage();
       A.render();
-      const c = (merged.mergeStats || {}).conflicts || 0;
-      A.toast('合并完成：' + picked.length + ' 台设备的记录' + (c ? '，' + c + ' 个商品需要核对' : '，数量全部一致'), c ? 'bad' : 'ok');
+      const ms = merged.mergeStats || {};
+      const c = ms.conflicts || 0;
+      A.toast('合并完成：' + (ms.files || picked.length) + ' 台设备、' + (ms.zones || 0) + ' 个区' + (c ? '，' + c + ' 个商品待核对' : '，没有冲突'), c ? 'bad' : 'ok');
       if (c) setTimeout(function () { A.openConflicts(); }, 600);
     };
     render();
@@ -214,10 +324,14 @@
     const body = items.map(function (it) {
       const vals = it.mergeConflict;
       const uniq = Array.from(new Set(vals.map((v) => v.count)));
+      const detail = vals.map(function (v) {
+        const zn = v.zone ? ((S.session.zoneMap && S.session.zoneMap[v.zone]) || v.zone) : (v.note || '未分区');
+        return A.esc(zn) + ' · ' + A.esc(v.device) + '：' + A.fmt(v.count);
+      }).join('　');
       return '<div class="card" style="margin-bottom:8px">' +
         '<div style="font-size:14px;font-weight:700">' + A.esc(it.name || '未命名') + '</div>' +
-        '<div class="hint" style="margin-top:2px">' + A.esc((it.barcodes || [])[0] || it.code || '') + '</div>' +
-        '<div class="hint" style="margin-top:4px">' + vals.map((v) => A.esc(v.device) + '：' + A.fmt(v.count)).join('　') + '</div>' +
+        '<div class="hint" style="margin-top:2px">' + A.esc((it.barcodes || [])[0] || it.code || '') + (it.mergeReasons && it.mergeReasons.indexOf('mixed') >= 0 ? ' · 有未分区数据' : '') + '</div>' +
+        '<div class="hint" style="margin-top:4px">' + detail + '</div>' +
         '<div class="btn-row" style="margin-top:8px">' +
         uniq.map((v) => '<button class="btn sm" data-cf="' + it.id + '" data-v="' + v + '">采纳 ' + A.fmt(v) + '</button>').join('') +
         '</div>' +
@@ -231,9 +345,12 @@
     const resolve = function (id, value) {
       const it = A.findItem(id);
       if (!it) return;
+      it.zones = {};
+      it.unzoned = Number(value);
       it.count = Number(value);
       it.countedAt = Date.now();
       it.mergeConflict = null;
+      it.mergeReasons = [];
       A.touch('count');
       if (A.updateChrome) A.updateChrome();
       const left = S.session.items.filter((x) => x.mergeConflict).length;

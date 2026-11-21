@@ -503,6 +503,12 @@
       let msg = S.mode === 'merge' && updated ? '已更新 ' + updated + ' 个，新增 ' + added + ' 个' : '导入 ' + res.items.length + ' 个商品';
       if (noCode) msg += '，' + noCode + ' 个无条码';
       A.toast(msg, 'ok');
+      const zLike = res.items.filter(function (it) {
+        return A.isZoneCode && (A.isZoneCode(it.code) || (it.barcodes || []).some(function (b) { return A.isZoneCode(b); }));
+      });
+      if (zLike.length) {
+        A.toast(zLike.length + ' 个商品的编码是 Z 开头的区域码格式，扫码时会被当成切区，请改掉', 'bad');
+      }
       if (res.dups.length) {
         A.toast(res.dups.length + ' 个条码在表格里重复，已留在第一次出现的商品上', 'bad', {
           label: '查看',

@@ -88,6 +88,7 @@
     A.updateChrome();
     if (S.tab === 'scan') {
       if (A.updateScanCard) A.updateScanCard();
+      if (A.renderZoneBar) A.renderZoneBar();
     } else if (typeof A.currentRefresh === 'function') {
       A.currentRefresh();
     }
@@ -291,6 +292,7 @@
     const st = A.stats();
     const pct = st.total ? Math.round((st.counted / st.total) * 100) : 0;
     const cfCount = S.session.items.filter((x) => x.mergeConflict).length;
+    const zones = A.zoneSummary();
     const diffs = S.session.items.filter(A.isDiff).sort(function (a, b) {
       return Math.abs(b.count - (b.book == null ? 0 : b.book)) - Math.abs(a.count - (a.book == null ? 0 : a.book));
     });
@@ -302,6 +304,11 @@
       '<div class="metric"><div class="m-lab">无69 / 清单外码</div><div class="m-val ' + (st.unknown ? 'bad' : '') + '">' + st.noCode + '<span style="font-size:15px;color:var(--tx3);font-weight:600"> / ' + st.unknown + '</span></div><div class="m-sub">无69商品 · 待处理条码</div></div>' +
       '</div>' +
       (cfCount ? '<button class="note warn" data-act="conflicts" style="width:100%;text-align:left;margin-top:12px">有 ' + cfCount + ' 个商品多人盘的数量不一致，点此核对 ›</button>' : '') +
+      (zones.length ? '<div class="sec-title">区域进度（' + zones.length + '）</div><div class="rows">' + zones.map(function (z) {
+        return '<div class="row"><div class="grow"><div class="nm">' + A.esc(z.label) + (z.done ? ' <span class="badge ok">已盘完</span>' : '') + '</div>' +
+          '<div class="meta">' + z.code + ' · ' + z.items + ' 种商品</div></div>' +
+          '<div class="count-box"><div class="cv">' + A.fmt(z.count) + '</div><div class="cl">件</div></div></div>';
+      }).join('') + '</div>' : '') +
       '<div class="btn-row" style="margin-top:12px">' +
       '<button class="btn primary" data-act="export">' + A.icon('download') + ' 导出 Excel</button>' +
       '<button class="btn" data-act="print-labels">' + A.icon('print') + ' 打印无69标签</button>' +
@@ -664,6 +671,7 @@
       '<div style="font-size:12px;color:var(--tx3)">已盘 ' + st.counted + '/' + st.total + ' · 差异 ' + st.diff + ' · 清单外码 ' + st.unknown + '</div></div>' +
       '<div class="rows">' +
       row('tasks', 'list', '盘点任务', '切换 / 新建 / 删除') +
+      row('zones', 'box', '区域管理', '划分片区 / 打印区域码') +
       row('import', 'upload', '导入另一张清单', '追加或新建') +
       row('receive', 'upload', '从剪贴板接收盘点', '把微信里的盘点转到这个浏览器') +
       row('merge', 'download', '合并多台手机的结果', '汇总其他店员的交接文件') +
@@ -680,6 +688,7 @@
           A.closeSheet();
           setTimeout(function () {
             if (m === 'tasks') A.openSessions();
+            else if (m === 'zones') A.openZones();
             else if (m === 'import') A.openImport();
             else if (m === 'export') A.openExport();
             else if (m === 'merge') A.openMerge();
@@ -694,6 +703,111 @@
     } });
   };
 
+  /* ---------------- 区域选择 / 管理 / 打印 ---------------- */
+  A.openZonePicker = function () {
+    const sess = S.session;
+    if (!sess) return;
+    const zones = A.zoneSummary();
+    const rows = zones.length ? zones.map(function (z) {
+      return '<div class="row" data-z="' + z.code + '"><div class="grow"><div class="nm">' + A.esc(z.label) + '</div>' +
+        '<div class="meta">' + z.code + ' · 已盘 ' + A.fmt(z.count) + ' 件 · ' + z.items + ' 种' + (z.done ? ' · 已盘完' : '') + '</div></div>' +
+        '<span class="badge ' + (sess.currentZone === z.code ? 'acc' : 'gray') + '">' + (sess.currentZone === z.code ? '当前' : '选择') + '</span></div>';
+    }).join('') : '<div class="empty" style="padding:20px">还没有区域，点下面「管理区域」新增</div>';
+    const body = document.createElement('div');
+    body.innerHTML =
+      '<div class="hint" style="margin-bottom:10px">区域码贴在货架/堆头上，扫一下就能切换；也可以在这里手动选。</div>' +
+      '<div class="rows" id="zpList">' + rows + '</div>' +
+      '<div class="btn-row" style="margin-top:12px">' +
+      '<button class="btn" id="zpClear">不分区</button>' +
+      '<button class="btn" id="zpManage">管理区域</button>' +
+      '</div>';
+    A.sheet({ title: '选择区域', body: body, onMount: function (b) {
+      A.$$('[data-z]', b).forEach(function (row) {
+        row.onclick = function () {
+          const code = row.getAttribute('data-z');
+          A.setZone(code);
+          A.closeSheet();
+          A.toast('已切换到「' + (S.session.zoneMap[code] || code) + '」', 'ok');
+          if (A.renderZoneBar) A.renderZoneBar();
+          A.updateChrome();
+        };
+      });
+      const clr = $('#zpClear', b);
+      if (clr) clr.onclick = function () { A.setZone(null); A.closeSheet(); A.toast('已切到未分区', 'ok'); if (A.renderZoneBar) A.renderZoneBar(); A.updateChrome(); };
+      const mg = $('#zpManage', b);
+      if (mg) mg.onclick = function () { A.closeSheet(); setTimeout(A.openZones, 120); };
+    } });
+  };
+
+  A.openZones = function () {
+    const sess = S.session;
+    if (!sess) { A.toast('先导入一张清单', 'bad'); return; }
+    const zones = A.zoneSummary();
+    const rows = zones.length ? zones.map(function (z) {
+      return '<div class="row"><div class="grow"><div class="nm">' + A.esc(z.label) + (z.done ? ' <span class="badge ok">已盘完</span>' : '') + '</div>' +
+        '<div class="meta">' + z.code + ' · 已盘 ' + A.fmt(z.count) + ' 件 · ' + z.items + ' 种</div></div>' +
+        '<button class="icon-btn" data-zr="' + z.code + '">' + A.icon('edit') + '</button>' +
+        '<button class="icon-btn" data-zd="' + z.code + '">' + A.icon('trash') + '</button></div>';
+    }).join('') : '<div class="empty" style="padding:20px">还没有区域</div>';
+    const body =
+      '<div class="note" style="margin-bottom:10px">把店划成若干片区（一个货架/一个堆头 = 一个区）。打印区域码贴在现场，店员扫一下切区；合并时不同区相加、同区取最大值。</div>' +
+      '<div class="rows" id="zList">' + rows + '</div>' +
+      '<button class="btn primary block" id="zAdd" style="margin-top:12px">+ 新增区域</button>' +
+      '<button class="btn block" id="zPrint" style="margin-top:8px">' + A.icon('print') + ' 打印区域码</button>';
+    const page = A.page({ title: '区域管理', body: body });
+    const re = function () { A.closePage(); setTimeout(A.openZones, 80); };
+    const add = $('#zAdd', page.body);
+    if (add) add.onclick = async function () {
+      const name = await A.askText({ title: '新增区域', label: '区域名字（例如：左墙货架）', value: '', placeholder: '左墙货架' });
+      if (name == null || !name.trim()) return;
+      A.addZone(name);
+      A.toast('已新增区域', 'ok');
+      re();
+    };
+    A.$$('[data-zr]', page.body).forEach(function (btn) {
+      btn.onclick = async function () {
+        const code = btn.getAttribute('data-zr');
+        const old = S.session.zoneMap[code] || '';
+        const name = await A.askText({ title: '改名', label: '区域名字', value: old });
+        if (name == null || !name.trim()) return;
+        A.renameZone(code, name);
+        re();
+      };
+    });
+    A.$$('[data-zd]', page.body).forEach(function (btn) {
+      btn.onclick = async function () {
+        const code = btn.getAttribute('data-zd');
+        const ok = await A.confirm({ title: '删除区域', text: '删除「' + (S.session.zoneMap[code] || code) + '」？该区已扫的数量会从商品上移除。', okText: '删除', danger: true });
+        if (!ok) return;
+        A.delZone(code);
+        A.toast('已删除', 'ok');
+        re();
+      };
+    });
+    const pr = $('#zPrint', page.body);
+    if (pr) pr.onclick = function () { A.printZoneLabels(zones); };
+  };
+
+  A.printZoneLabels = function (list) {
+    list = list || A.zoneSummary();
+    if (!list.length) { A.toast('还没有区域，先新增', 'bad'); return; }
+    const area = document.getElementById('printArea');
+    area.innerHTML = '<div class="zone-grid">' + list.map(function (z) {
+      return '<div class="zone-card">' +
+        '<div class="zc-t">' + A.esc(z.label) + '</div>' +
+        '<svg class="zbc" data-code="' + A.esc(z.code) + '"></svg>' +
+        '<div class="zc-c">' + A.esc(z.code) + '</div>' +
+        '</div>';
+    }).join('') + '</div>';
+    area.querySelectorAll('svg[data-code]').forEach(function (svg) {
+      try {
+        JsBarcode(svg, svg.getAttribute('data-code'), { format: 'CODE128', width: 2, height: 54, displayValue: false, margin: 4, background: '#ffffff', lineColor: '#000000' });
+      } catch (e) {}
+    });
+    A.toast('已生成 ' + list.length + ' 张区域码，在打印预览里打印', 'ok');
+    setTimeout(function () { window.print(); }, 450);
+  };
+
   A.openSettings = function () {
     const s = S.settings;
     const body =
@@ -704,6 +818,13 @@
       '<div class="row"><div class="grow"><div class="nm">防连扫</div><div class="meta">同一个码移开后 2 秒才再计</div></div><label class="switch"><input type="checkbox" data-s="dedupe"' + (s.dedupe ? ' checked' : '') + '></label></div>' +
       '<div class="row"><div class="grow"><div class="nm">保持屏幕常亮</div><div class="meta">扫码时不让屏幕熄灭</div></div><label class="switch"><input type="checkbox" data-s="wake"' + (s.wake ? ' checked' : '') + '></label></div>' +
       '</div>' +
+      '<div class="field" style="margin-top:12px"><label>扫码模式</label>' +
+      '<select class="inp" id="scanModeSel">' +
+      '<option value="auto"' + (s.scanMode === 'auto' ? ' selected' : '') + '>自动（iPhone 半自动 / 安卓连续）</option>' +
+      '<option value="continuous"' + (s.scanMode === 'continuous' ? ' selected' : '') + '>连续扫（更快，适合安卓）</option>' +
+      '<option value="semi"' + (s.scanMode === 'semi' ? ' selected' : '') + '>半自动（对准后点屏幕 +1）</option>' +
+      '</select></div>' +
+      '<div class="hint" style="margin-top:8px">连续扫：扫完一件要移开，同一个码移开后再扫才会 +1；半自动：对准后点屏幕任意处 +1，iPhone 默认。</div>' +
       '<div class="hint" style="margin-top:12px">设置只影响这台手机上的浏览器。</div>' +
       '<button class="btn block" id="selfTest" style="margin-top:14px">识别诊断（把结果发我）</button>' +
       '<div class="hint" id="engineInfo" style="margin-top:8px"></div>' +
@@ -725,6 +846,13 @@
           A.saveSettings();
         };
       });
+      const sel = $('#scanModeSel', b);
+      if (sel) sel.onchange = function () {
+        s.scanMode = sel.value;
+        A.saveSettings();
+        if (A.restartScan) A.restartScan();
+        A.toast('已切换扫码模式', 'ok');
+      };
     } });
   };
 

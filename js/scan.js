@@ -7,8 +7,12 @@
   const st = (A.scanState = {
     stream: null, video: null, canvas: null, det: null, reader: null,
     running: false, paused: false, timer: null,
-    lastCode: '', lastAt: 0, torchOn: false, track: null,
-    wake: null, err: '', cardEl: null, mounted: false,
+    torchOn: false, track: null, wake: null, err: '', cardEl: null, mounted: false,
+    gate: { code: '', miss: 0, muteUntil: 0, lastBox: null, lastSeen: 0, diag: 1 },
+    zonePend: null, zoneDwell: 500, zoneLast: '',
+    semi: false, semiPick: null, semiAt: 0, semiLast: 0,
+    decoding: false, lastDecodeAt: 0, interval: 160, hits: 0, lastZx: 0,
+    detMiss: 0, tick: 0,
   });
 
   A.scanPause = function (v) { st.paused = !!v; };
@@ -74,6 +78,9 @@
       const stats = A.stats();
       return '<div class="result idle">' +
         '<div class="idle-h">扫码即计数</div>' +
+        (S.session && S.session.currentZone
+          ? '<div class="idle-zone">当前区域：' + A.esc(S.session.zoneMap[S.session.currentZone] || S.session.currentZone) + '</div>'
+          : '<div class="idle-zone warn">还没选区域 · 扫商品会记到「未分区」</div>') +
         '<div class="idle-p">' +
         '· 对准 <b>69 码</b>，识别后自动匹配清单并 +1<br>' +
         '· 清单里<b>没有条码</b>的商品，去「无码」页点 +1<br>' +
@@ -86,10 +93,12 @@
         '</div></div>';
     }
     const cnt = it.count == null ? 0 : it.count;
+    const zc = S.session && S.session.currentZone;
     const meta = [];
     if (it.spec) meta.push(A.esc(it.spec));
     if (it.loc) meta.push('货位 ' + A.esc(it.loc));
     if (it.unit) meta.push(A.esc(it.unit));
+    if (zc) meta.push('<span class="zone-tag">' + A.esc(S.session.zoneMap[zc] || zc) + '</span>');
     const undo = S.undo.length ? S.undo[S.undo.length - 1] : null;
     return '<div class="result">' +
       '<div class="r-top"><div style="flex:1;min-width:0">' +
@@ -98,7 +107,7 @@
       '</div>' + diffBadge(it) + '</div>' +
       '<div class="r-nums">' +
       '<div class="r-big">' + A.fmt(cnt) + '</div>' +
-      '<div class="r-side">实盘数量<br><b>账面 ' + (it.book == null ? '—' : A.fmt(it.book)) + '</b></div>' +
+      '<div class="r-side">实盘数量<br><b>账面 ' + (it.book == null ? '—' : A.fmt(it.book)) + '</b>' + (zc ? '<br>本区 ' + A.fmt((it.zones && it.zones[zc]) || 0) : '') + '</div>' +
       '<div style="margin-left:auto;text-align:right;font-size:11px;color:var(--tx3);padding-bottom:4px">' +
       (it.barcodes && it.barcodes.length ? '<div style="font-variant-numeric:tabular-nums">' + A.esc(it.barcodes[0]) + '</div>' : '<div class="badge gray">无条码</div>') + '</div>' +
       '</div>' +
@@ -172,6 +181,7 @@
   }
   async function start() {
     if (st.running || st.pending) return;
+    applyScanMode();
     const video = $('#cam');
     if (!video) return;
     st.video = video;
@@ -244,6 +254,9 @@
     st.running = false;
     st.paused = false;
     st.pending = false;
+    st.gate.code = '';
+    st.gate.miss = 0;
+    st.semiPick = null;
     clearTimeout(st.timer);
     clearTimeout(st.guard);
     clearTimeout(st.wd2);
@@ -348,37 +361,93 @@
     }
   }
 
+  /* ---------- 解码：ROI 裁剪 + 单入口 + 离场闸门 ---------- */
+  function isIOSDevice() {
+    return /iPad|iPhone|iPod/.test(navigator.userAgent) ||
+      (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+  }
+  function applyScanMode() {
+    const m = S.settings.scanMode || 'auto';
+    st.semi = m === 'semi' || (m === 'auto' && isIOSDevice());
+    st.interval = st.semi ? 240 : 150;
+  }
+
+  function roiOf(vw, vh) {
+    const w = Math.round(vw * 0.64);
+    const h = Math.round(vh * 0.44);
+    return {
+      x: Math.round((vw - w) / 2),
+      y: Math.round((vh - h) / 2 - vh * 0.03),
+      w: w, h: h,
+    };
+  }
+
+  function decodeOnce() {
+    const v = st.video;
+    if (!v || !v.videoWidth) return;
+    const roi = roiOf(v.videoWidth, v.videoHeight);
+    const scale = Math.min(1, 900 / roi.w);
+    const w = Math.max(2, Math.round(roi.w * scale));
+    const h = Math.max(2, Math.round(roi.h * scale));
+    const c = st.canvas || (st.canvas = document.createElement('canvas'));
+    if (c.width !== w || c.height !== h) { c.width = w; c.height = h; }
+    try {
+      c.getContext('2d', { willReadFrequently: true }).drawImage(v, roi.x, roi.y, roi.w, roi.h, 0, 0, w, h);
+    } catch (e) { return; }
+    st.decoding = true;
+    const finish = function (out) {
+      st.decoding = false;
+      if (!st.running) return;
+      ingest(out || []);
+    };
+    if (st.det) {
+      let p;
+      try { p = st.det.detect(c); } catch (e) { p = Promise.reject(e); }
+      Promise.resolve(p).then(function (arr) {
+        const out = (arr || []).map(function (d) {
+          return { raw: d.rawValue, format: d.format, box: d.boundingBox || null };
+        });
+        if (out.length) { st.detMiss = 0; finish(out); return; }
+        st.detMiss++;
+        const now = Date.now();
+        if (st.reader && now - st.lastZx > 400) {
+          st.lastZx = now;
+          const z = decodeCanvas(c);
+          finish(z ? [{ raw: z, format: '', box: null }] : []);
+        } else finish([]);
+      }).catch(function () {
+        st.detMiss++;
+        const now = Date.now();
+        let z = null;
+        if (st.reader && now - st.lastZx > 400) { st.lastZx = now; z = decodeCanvas(c); }
+        finish(z ? [{ raw: z, format: '', box: null }] : []);
+      });
+    } else if (st.reader) {
+      const z = decodeCanvas(c);
+      finish(z ? [{ raw: z, format: '', box: null }] : []);
+    } else {
+      finish([]);
+    }
+  }
+
   function loop() {
     if (!st.running) return;
     const step = function () {
       if (!st.running) return;
-      if (!st.paused && st.video && st.video.readyState >= 2 && st.video.videoWidth) {
-        if (st.det) {
-          st.det.detect(st.video).then(function (codes) {
-            if (codes && codes.length) {
-              st.detMiss = 0;
-              onCode(codes[0].rawValue);
-            } else {
-              st.detMiss = (st.detMiss || 0) + 1;
-              // 浏览器自带的检测器一直没结果时，回退到 ZXing
-              if (st.detMiss > 14) st.det = null;
-            }
-          }).catch(function () {
-            st.detMiss = (st.detMiss || 0) + 1;
-            if (st.detMiss > 6) st.det = null;
-          });
-        } else if (st.capture) {
-          grabWithCapture();
-        } else if (st.reader) {
-          zxingScan();
+      const now = Date.now();
+      const v = st.video;
+      if (!st.paused && v && v.readyState >= 2 && v.videoWidth) {
+        if (!st.decoding && now - st.lastDecodeAt >= st.interval) {
+          st.lastDecodeAt = now;
+          decodeOnce();
         }
+        if (st.gate.code && now - st.gate.lastSeen > 900) missFrame();
       }
-      st.tick = (st.tick || 0) + 1;
-      if (st.tick === 60 && !st.hits) {
+      st.tick++;
+      if (st.tick === 90 && !st.hits) {
         A.toast('扫不出来？点右上角「拍照」，用系统相机拍一张也能识别', null);
       }
-      if (!st.paused && st.tick % 8 === 0) grabDecode();
-      st.timer = setTimeout(step, st.det ? 140 : 240);
+      st.timer = setTimeout(step, 70);
     };
     clearTimeout(st.timer);
     step();
@@ -393,39 +462,185 @@
     f.classList.add('go');
   }
 
-  function onCode(raw) {
-    const code = A.normCode(raw);
-    if (!code) return 'empty';
-    const now = Date.now();
-    if (S.settings.dedupe && code === st.lastCode && now - st.lastAt < 2000) {
-      st.lastAt = now; // 画面里一直是这个码：不断顺延，移开后才允许再计
-      return 'dup';
+  function inCenter(box, cw, ch) {
+    const cx = box.x + box.width / 2, cy = box.y + box.height / 2;
+    const r = Math.min(cw, ch) * 0.46;
+    return Math.abs(cx - cw / 2) < r && Math.abs(cy - ch / 2) < r;
+  }
+  function boxCenter(b) { return { x: b.x + b.width / 2, y: b.y + b.height / 2 }; }
+  function boxDist(a, b) {
+    const dx = a.x - b.x, dy = a.y - b.y;
+    return Math.sqrt(dx * dx + dy * dy);
+  }
+
+  function missFrame() {
+    if (!st.gate.code) return;
+    st.gate.miss++;
+    if (st.gate.miss >= 3) {
+      st.gate.code = '';
+      st.gate.miss = 0;
+      st.gate.lastBox = null;
     }
-    st.lastCode = code;
-    st.lastAt = now;
-    const item = A.findByCode(code);
+  }
+
+  function ingest(list) {
+    const now = Date.now();
+    const c = st.canvas;
+    const cw = c ? c.width : 0, ch = c ? c.height : 0;
+    const cands = [];
+    (list || []).forEach(function (d) {
+      const raw = A.normCode(d.raw);
+      if (!raw) return;
+      if (d.box && cw && !inCenter(d.box, cw, ch)) return;
+      cands.push({ raw: raw, format: d.format || '', box: d.box || null, area: d.box ? d.box.width * d.box.height : 1 });
+    });
+    if (!cands.length) { missFrame(); return; }
+    cands.sort(function (a, b) { return b.area - a.area; });
+    const pick = cands[0];
+
+    // 区域码优先：对准停留 500ms 才切区，防止扫商品时误扫到墙上的区域码
+    if (A.isZoneCode(pick.raw)) { handleZone(pick.raw, now); return; }
+    st.zonePend = null;
+
+    if (st.semi) {
+      st.semiPick = pick;
+      st.semiAt = now;
+      return;
+    }
+    if (st.paused) return;
+    if (now < st.gate.muteUntil) return;
+
+    const canon = A.canonCode(pick.raw);
+    if (st.gate.code && A.canonCode(st.gate.code) === canon) {
+      // 同一个码：框突然大位移 = 换了另一件同款
+      if (pick.box && st.gate.lastBox && st.gate.diag) {
+        if (boxDist(boxCenter(pick.box), boxCenter(st.gate.lastBox)) > st.gate.diag * 0.25) {
+          accept(pick, now);
+          return;
+        }
+      }
+      st.gate.lastSeen = now;
+      st.gate.miss = 0;
+      if (pick.box) st.gate.lastBox = pick.box;
+      return;
+    }
+    // 上一个码还在画面里时，别把旁边货架上的码当成新件（串扫保护）
+    if (st.gate.code && now - st.gate.lastSeen < 320 && st.gate.miss < 3) return;
+    accept(pick, now);
+  }
+
+  function diagOf() {
+    const c = st.canvas;
+    const base = c ? Math.sqrt(c.width * c.width + c.height * c.height) : 800;
+    return base * 0.35;
+  }
+
+  function accept(pick, now) {
+    const item = A.findByCode(pick.raw);
     if (item) {
       A.bump(item, 1);
-      S.lastScan = { itemId: item.id, code: code, at: now };
+      S.lastScan = { itemId: item.id, code: pick.raw, at: now };
+      st.gate = {
+        code: A.canonCode(pick.raw), miss: 0, muteUntil: now + 300,
+        lastBox: pick.box || null, lastSeen: now, diag: diagOf(),
+      };
+      st.hits++;
       flash();
       A.feedback('ok');
       A.updateScanCard();
       if (A.updateChrome) A.updateChrome();
       return 'hit';
     }
-    // 清单外：只有 69 码才弹窗，二维码/其他码直接忽略
-    if (S.settings.only69 && !A.is69(code)) {
+    if (S.settings.only69 && !A.is69(pick.raw) && !A.is69(A.canonCode(pick.raw))) {
       if (now - (st.lastIgnoredAt || 0) > 2500) {
         st.lastIgnoredAt = now;
-        A.toast('不是 69 码，已忽略：' + code, null);
+        A.toast('不是 69 码，已忽略：' + pick.raw, null);
       }
       A.vibrate(10);
       return 'ignored';
     }
     A.feedback('bad');
     pauseForDialog();
+    openUnknown(pick.raw);
+    return 'unknown';
+  }
+
+  function handleZone(code, now) {
+    if (st.zonePend && st.zonePend.code === code) {
+      if (now - st.zonePend.since < st.zoneDwell) return;
+    } else {
+      st.zonePend = { code: code, since: now };
+      return;
+    }
+    st.zonePend = null;
+    if (st.zoneLast === code) return;
+    st.zoneLast = code;
+    A.setZone(code);
+    st.gate.code = '';
+    st.gate.miss = 0;
+    A.feedback('zone');
+    const label = (S.session && S.session.zoneMap && S.session.zoneMap[code]) || code;
+    A.toast('已切换区域：' + label, 'ok');
+    A.updateScanCard();
+    if (A.updateChrome) A.updateChrome();
+    if (A.renderZoneBar) A.renderZoneBar();
+  }
+
+  function acceptSingle(code) {
+    const item = A.findByCode(code);
+    if (item) {
+      A.bump(item, 1);
+      S.lastScan = { itemId: item.id, code: code, at: Date.now() };
+      st.hits++;
+      A.feedback('ok');
+      A.updateScanCard();
+      if (A.updateChrome) A.updateChrome();
+      return 'hit';
+    }
+    if (S.settings.only69 && !A.is69(code) && !A.is69(A.canonCode(code))) {
+      A.toast('不是 69 码，已忽略：' + code, null);
+      return 'ignored';
+    }
+    A.feedback('bad');
+    pauseForDialog();
     openUnknown(code);
     return 'unknown';
+  }
+
+  A.handleScannedCode = function (raw, opts) {
+    const code = A.normCode(raw);
+    if (!code) return 'empty';
+    if (A.isZoneCode(code)) {
+      A.setZone(code);
+      A.feedback('zone');
+      A.toast('已切换区域：' + ((S.session && S.session.zoneMap && S.session.zoneMap[code]) || code), 'ok');
+      A.updateScanCard();
+      if (A.updateChrome) A.updateChrome();
+      if (A.renderZoneBar) A.renderZoneBar();
+      return 'zone';
+    }
+    if (opts && opts.force) return acceptSingle(code);
+    return ingest([{ raw: code, format: '', box: null }]);
+  };
+
+  function semiConfirm() {
+    if (!st.semi) return;
+    if (st.paused) return;
+    const p = st.semiPick;
+    if (!p || Date.now() - st.semiAt > 3500) {
+      A.toast('没看到条码，把条码对准框内再点', 'bad');
+      return;
+    }
+    acceptSingle(p.raw);
+    st.semiPick = null;
+    st.semiAt = 0;
+  }
+  A.semiConfirm = semiConfirm;
+
+  function onCode(raw) {
+    const code = A.normCode(raw);
+    if (!code) return 'empty';
+    return acceptSingle(code);
   }
 
   function pauseForDialog() {
@@ -576,11 +791,7 @@
     } });
   };
 
-  A.handleScannedCode = onCode;
-
-
-
-  A.handleScannedCode = onCode;
+  // 识别入口统一走上面的 A.handleScannedCode（区域码 / 半自动 / 入闸门）
 
   /* ---------- 拍照 / 相册识别（相机接口不可用时的兜底） ---------- */
   function rotateCanvas(src, deg) {
@@ -671,7 +882,7 @@
         A.toast('正在识别图片里的条码…');
         const code = await decodeImageFile(f);
         if (code) {
-          const r = A.handleScannedCode(code);
+          const r = A.handleScannedCode(code, { force: true });
           if (r === 'hit') {
             A.feedback('ok');
             A.toast('识别成功：' + code, 'ok');
@@ -786,15 +997,26 @@
 
   /* ---------- 挂载 / 卸载 ---------- */
   A.mountScan = function (container) {
+    applyScanMode();
     container.innerHTML =
       '<div class="scan">' +
+      '<div class="zone-bar" id="zoneBar">' +
+      '<button class="zone-pill" id="zoneBtn">未分区</button>' +
+      '<button class="zone-done" id="zoneDoneBtn" disabled>本区盘完</button>' +
+      '</div>' +
+      '<div class="wx-tip" id="wxTip" hidden>' +
+      '<span>微信里相机可能打不开：点右上角 ··· → 在浏览器打开</span>' +
+      '<button data-wx="copy">复制链接</button>' +
+      '<button data-wx="close">×</button>' +
+      '</div>' +
       '<div class="cam" id="camBox">' +
       '<video id="cam" playsinline muted autoplay></video>' +
       '<div class="mask"></div>' +
       '<div class="frame"></div>' +
       '<div class="cam-top"><i class="live"></i><span id="camState">正在启动相机…</span></div>' +
       '<div class="cam-tools"><button class="cam-tool" id="photoBtn">拍照</button><button class="cam-tool" id="torchBtn" hidden>手电</button></div>' +
-      '<div class="cam-hint">把条码放进框内 · 支持 69 码 / 二维码 / 内部码</div>' +
+      '<div class="cam-hint" id="camHint">把条码放进框内 · 支持 69 码 / 二维码 / 内部码</div>' +
+      '<div class="semi-hint" id="semiHint" hidden>对准条码，点屏幕 +1</div>' +
       '<div class="flash" id="flash"></div>' +
       '<div class="cam-warn" id="camWarn" hidden>' +
       '<span>画面是黑的？可能被其它应用占用</span>' +
@@ -813,6 +1035,7 @@
       '<label class="switch"><input type="checkbox" id="dedupeChk"' + (S.settings.dedupe ? ' checked' : '') + '> 防连扫</label>' +
       '</div>' +
       '</div>';
+    A.renderZoneBar();
     const chk = container.querySelector('#dedupeChk');
     chk.onchange = function () { S.settings.dedupe = chk.checked; A.saveSettings(); };
     container.querySelector('#photoBtn').onclick = function () { A.photoScan(); };
@@ -832,8 +1055,71 @@
         torch.style.color = st.torchOn ? '#fbbf24' : '';
       } catch (e) { A.toast('这个摄像头不支持手电', 'bad'); }
     };
+
+    const zb = container.querySelector('#zoneBtn');
+    if (zb) zb.onclick = function () { if (A.openZonePicker) A.openZonePicker(); };
+    const zd = container.querySelector('#zoneDoneBtn');
+    if (zd) zd.onclick = function () {
+      const cur = S.session && S.session.currentZone;
+      if (!cur) { A.toast('先扫区域码或选一个区域', 'bad'); return; }
+      A.setZoneDone(cur, true);
+      A.toast('「' + (S.session.zoneMap[cur] || cur) + '」已标记盘完', 'ok');
+      const next = A.zoneSummary().find(function (z) { return !z.done && z.code !== cur; });
+      if (next) A.setZone(next.code);
+      A.renderZoneBar();
+      A.updateScanCard();
+      if (A.updateChrome) A.updateChrome();
+    };
+
+    const camBox = container.querySelector('#camBox');
+    if (camBox) camBox.addEventListener('click', function (e) {
+      if (!st.semi) return;
+      if (e.target.closest('button, .cam-start, .cam-err')) return;
+      semiConfirm();
+    });
+
+    const wx = container.querySelector('#wxTip');
+    if (wx && /MicroMessenger/i.test(navigator.userAgent)) {
+      wx.hidden = false;
+      A.$$('[data-wx]', wx).forEach(function (b) {
+        b.onclick = function () {
+          if (b.getAttribute('data-wx') === 'close') { wx.hidden = true; return; }
+          if (navigator.clipboard && navigator.clipboard.writeText) {
+            navigator.clipboard.writeText(location.href).then(function () { A.toast('链接已复制，粘贴到浏览器打开', 'ok'); }).catch(function () { A.toast('复制失败，请手动复制地址栏链接', 'bad'); });
+          } else A.toast('请手动复制地址栏链接', 'bad');
+        };
+      });
+    }
+    const sh = container.querySelector('#semiHint');
+    if (sh) sh.hidden = !st.semi;
+
     st.mounted = true;
     start();
+  };
+
+  A.renderZoneBar = function () {
+    const bar = $('#zoneBar');
+    if (!bar) return;
+    const sess = S.session;
+    if (!sess) return;
+    const cur = sess.currentZone;
+    const label = cur ? (sess.zoneMap[cur] || cur) : '';
+    const btn = $('#zoneBtn');
+    if (btn) {
+      btn.textContent = cur ? (cur + ' · ' + label) : '未分区（点此选区域）';
+      btn.className = 'zone-pill' + (cur ? ' on' : '');
+    }
+    const done = $('#zoneDoneBtn');
+    if (done) {
+      const isDone = cur && sess.zoneDone && sess.zoneDone[cur];
+      done.textContent = isDone ? '✓ 本区已盘完' : '本区盘完';
+      done.className = 'zone-done' + (isDone ? ' done' : '');
+      done.disabled = !cur;
+    }
+    const hint = $('#camHint');
+    if (hint) hint.textContent = cur
+      ? '当前：' + label + ' · 把条码放进框内'
+      : '把条码放进框内 · 先扫区域码或点上方选区域';
   };
 
   A.unmountScan = function () {
@@ -848,8 +1134,12 @@
 
   document.addEventListener('visibilitychange', function () {
     if (document.hidden) {
+      st.gate.code = '';
+      st.gate.miss = 0;
       if (st.stream) { try { st.stream.getTracks().forEach((t) => t.stop()); } catch (e) {} st.stream = null; st.running = false; clearTimeout(st.timer); }
     } else if (!document.hidden && st.mounted && !st.running) {
+      st.gate.code = '';
+      st.gate.miss = 0;
       start();
     }
   });

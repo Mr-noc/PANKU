@@ -65,9 +65,19 @@
     return d > 0 ? '盘盈' : '盘亏';
   }
 
+  function zoneText(it) {
+    const parts = [];
+    const zs = it.zones || {};
+    Object.keys(zs).forEach(function (z) {
+      parts.push((S.session.zoneMap[z] || z) + '=' + A.fmt(zs[z]));
+    });
+    if (it.unzoned != null) parts.push('未分区=' + A.fmt(it.unzoned));
+    return parts.join('; ');
+  }
+
   function detailRows() {
     const hasStore = S.session.items.some((it) => it.store);
-    const rows = [['序号', '门店', '商品名称', '规格', '单位', '内部编码', '69码/条码', '69码状态', '货位', '账面数量', '实盘数量', '差异', '状态', '备注']];
+    const rows = [['序号', '门店', '商品名称', '规格', '单位', '内部编码', '69码/条码', '69码状态', '货位', '区域明细', '账面数量', '实盘数量', '差异', '状态', '备注']];
     S.session.items.forEach(function (it, i) {
       const diff = it.count == null ? '' : (it.book == null ? Number(it.count) : Number(it.count) - Number(it.book));
       rows.push([
@@ -80,6 +90,7 @@
         (it.barcodes || []).join(' / '),
         (it.barcodes || []).length ? '有' : '无',
         it.loc || '',
+        zoneText(it),
         it.book == null ? '' : Number(it.book),
         it.count == null ? '' : Number(it.count),
         diff,
@@ -124,7 +135,16 @@
       ['实盘合计', st.real],
       ['无码商品', st.noCode],
       ['清单外条码', st.unknown],
+      ['区域数', Object.keys(S.session.zoneMap || {}).length],
     ];
+  }
+
+  function zoneRows() {
+    const rows = [['区域码', '区域名', '已盘数量', '商品种数', '状态']];
+    A.zoneSummary().forEach(function (z) {
+      rows.push([z.code, z.label, z.count, z.items, z.done ? '已盘完' : '']);
+    });
+    return rows;
   }
 
   A.exportXLSX = function () {
@@ -132,7 +152,7 @@
     try {
       const wb = XLSX.utils.book_new();
       const ws1 = XLSX.utils.aoa_to_sheet(detailRows());
-      ws1['!cols'] = [{ wch: 6 }, { wch: 14 }, { wch: 30 }, { wch: 14 }, { wch: 7 }, { wch: 13 }, { wch: 22 }, { wch: 9 }, { wch: 10 }, { wch: 10 }, { wch: 10 }, { wch: 8 }, { wch: 8 }, { wch: 20 }];
+      ws1['!cols'] = [{ wch: 6 }, { wch: 12 }, { wch: 30 }, { wch: 14 }, { wch: 7 }, { wch: 13 }, { wch: 22 }, { wch: 8 }, { wch: 12 }, { wch: 26 }, { wch: 10 }, { wch: 10 }, { wch: 8 }, { wch: 8 }, { wch: 20 }];
       ws1['!freeze'] = { xSplit: 0, ySplit: 1 };
       XLSX.utils.book_append_sheet(wb, ws1, '盘点明细');
 
@@ -147,6 +167,13 @@
       const ws4 = XLSX.utils.aoa_to_sheet(summaryRows());
       ws4['!cols'] = [{ wch: 16 }, { wch: 30 }];
       XLSX.utils.book_append_sheet(wb, ws4, '汇总');
+
+      const zs = A.zoneSummary();
+      if (zs.length) {
+        const ws5 = XLSX.utils.aoa_to_sheet(zoneRows());
+        ws5['!cols'] = [{ wch: 12 }, { wch: 24 }, { wch: 12 }, { wch: 12 }, { wch: 12 }];
+        XLSX.utils.book_append_sheet(wb, ws5, '区域汇总');
+      }
 
       const name = '盘点_' + safeName(S.session.name) + '_' + stamp() + '.xlsx';
       const out = XLSX.write(wb, { bookType: 'xlsx', type: 'array', compression: true });

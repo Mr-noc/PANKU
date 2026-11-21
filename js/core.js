@@ -105,7 +105,7 @@
     filter: 'all',
     q: '',
     q2: '',
-    settings: Object.assign({ sound: true, vibrate: true, dedupe: true, wake: true, only69: true }, LS.get('panku.settings', {})),
+    settings: Object.assign({ sound: true, vibrate: true, dedupe: true, wake: true, only69: true, scanMode: 'auto', zones: true }, LS.get('panku.settings', {})),
     idx: { bc: new Map(), cd: new Map() },
     undo: [],
     lastScan: null,
@@ -146,7 +146,16 @@
     return s;
   };
 
-  /* 从单元格里拆出多个条码：支持 "6901234567890, 6901234567891" */
+  /* 扫码归一：UPC-A 12 位补前导 0 成 EAN-13，剥 AIM 前缀与 GS1 AI(01) */
+  A.canonCode = function (v) {
+    let s = A.normCode(v);
+    if (!s) return '';
+    s = s.replace(/^\][A-Za-z0-9]{2}/, '');
+    if (/^\d{16}$/.test(s) && /^01/.test(s)) s = s.slice(2);
+    if (/^\d{14}$/.test(s) && s[0] === '0') s = s.slice(1);
+    if (/^\d{12}$/.test(s)) s = '0' + s;
+    return s;
+  };
   A.extractCodes = function (v) {
     const out = [];
     if (v == null) return out;
@@ -196,6 +205,10 @@
       createdAt: Date.now(),
       updatedAt: Date.now(),
       source: '',
+      v: 2,
+      currentZone: null,
+      zoneMap: {},
+      zoneDone: {},
       items: [],
       unknown: [],
       notes: '',
@@ -212,6 +225,11 @@
     S.undo = [];
     S.lastScan = null;
     if (!sess.unknown) sess.unknown = [];
+    if (!sess.zoneMap) sess.zoneMap = {};
+    if (sess.currentZone === undefined) sess.currentZone = null;
+    if (!sess.zoneDone) sess.zoneDone = {};
+    sess.v = 2;
+    // 兼容旧数据：没有分区计数时，把原 count 当作「未分区」数量
     // 兼容 1.4 导入的旧数据：整份都没有条码、但编码是纯数字时，自动补成 69 码
     if (!sess.barcodeFixed) {
       const anyBc = sess.items.some((it) => (it.barcodes || []).length);
@@ -225,6 +243,9 @@
     sess.items.forEach((it) => {
       if (!it.barcodes) it.barcodes = [];
       if (!it.altCodes) it.altCodes = [];
+      if (!it.zones) it.zones = {};
+      if (!it.zonesDone) it.zonesDone = {};
+      if (it.unzoned === undefined) it.unzoned = it.count == null ? null : Number(it.count);
       if (it.count === undefined) it.count = null;
       if (it.book === undefined) it.book = null;
     });
@@ -295,6 +316,14 @@
   A.rebuild = function () {
     const bc = new Map(), cd = new Map();
     const sess = S.session;
+    const put = function (k, it) {
+      if (!k) return;
+      if (!bc.has(k)) bc.set(k, it);
+      // 数字码同时登记 12/13 位互转形式，兼容 UPC-A 与 EAN-13 前导零差异
+      if (/^\d{12}$/.test(k) && !bc.has('0' + k)) bc.set('0' + k, it);
+      if (/^\d{13}$/.test(k) && k[0] === '0' && !bc.has(k.slice(1))) bc.set(k.slice(1), it);
+      if (/^\d+$/.test(k) && k !== k.replace(/^0+/, '') && !bc.has(k.replace(/^0+/, ''))) bc.set(k.replace(/^0+/, ''), it);
+    };
     if (sess) {
       sess.items.forEach((it) => {
         if (it.code) cd.set(A.normCode(it.code).toUpperCase(), it);
@@ -303,13 +332,11 @@
           if (k && !cd.has(k)) cd.set(k, it);
         });
         (it.barcodes || []).forEach(function (b) {
-          const c = A.normCode(b);
-          if (!c) return;
-          if (!bc.has(c)) bc.set(c, it);
-          if (/^\d+$/.test(c) && c !== c.replace(/^0+/, '')) {
-            const z = c.replace(/^0+/, '');
-            if (!bc.has(z)) bc.set(z, it);
-          }
+          const raw = A.normCode(b);
+          if (!raw) return;
+          put(raw, it);
+          const canon = A.canonCode(raw);
+          if (canon && canon !== raw) put(canon, it);
         });
       });
     }
@@ -321,6 +348,10 @@
     if (!c) return null;
     const idx = S.idx;
     let it = idx.bc.get(c) || idx.cd.get(c.toUpperCase());
+    if (!it) {
+      const cc = A.canonCode(raw);
+      if (cc && cc !== c) it = idx.bc.get(cc) || idx.cd.get(cc.toUpperCase());
+    }
     if (it) return it;
     if (/^\d+$/.test(c)) {
       const nz = c.replace(/^0+/, '');
@@ -357,27 +388,83 @@
     if (typeof A.onData === 'function') A.onData(kind || 'count');
   };
 
+  A.recount = function (it) {
+    if (!it) return null;
+    const zs = it.zones || {};
+    let sum = 0, any = false;
+    Object.keys(zs).forEach(function (k) {
+      const v = Number(zs[k]);
+      if (isFinite(v)) { sum += v; any = true; }
+    });
+    if (it.unzoned != null && isFinite(Number(it.unzoned))) { sum += Number(it.unzoned); any = true; }
+    it.count = any ? Math.round(sum * 1000) / 1000 : null;
+    if (it.count == null) it.countedAt = null;
+    else if (!it.countedAt) it.countedAt = Date.now();
+    return it.count;
+  };
+
+  function snapOf(item) {
+    return {
+      itemId: item.id, prev: item.count,
+      prevZones: JSON.parse(JSON.stringify(item.zones || {})),
+      prevUnzoned: item.unzoned == null ? null : item.unzoned,
+      prevCountedAt: item.countedAt || null,
+      at: Date.now(),
+    };
+  }
+
   A.setCount = function (item, n, opts) {
     if (!item) return;
     opts = opts || {};
     const prev = item.count;
     let v = n == null ? null : Number(n);
     if (v != null && (!isFinite(v) || v < 0)) v = Math.max(0, isFinite(v) ? v : 0);
-    if (prev === v) return;
-    item.count = v;
-    item.countedAt = v == null ? null : Date.now();
+    if (prev === v && opts.force !== true) return;
+    const snap = snapOf(item);
+    if (v == null) {
+      item.zones = {};
+      item.unzoned = null;
+      item.count = null;
+      item.countedAt = null;
+    } else {
+      const z = S.session && S.session.currentZone;
+      item.zones = {};
+      if (z) { item.zones[z] = v; item.unzoned = 0; }
+      else { item.unzoned = v; }
+      item.count = v;
+      item.countedAt = Date.now();
+    }
     if (opts.undo !== false) {
-      S.undo.push({ itemId: item.id, prev: prev, at: Date.now() });
+      S.undo.push(snap);
       if (S.undo.length > 40) S.undo.shift();
     }
     A.touch('count');
     return v;
   };
 
-  A.bump = function (item, delta) {
+  A.bump = function (item, delta, zone) {
     if (!item) return;
-    const base = item.count == null ? 0 : Number(item.count);
-    return A.setCount(item, Math.round((base + delta) * 1000) / 1000);
+    const d = Number(delta) || 0;
+    if (!d) return item.count;
+    const z = zone === undefined ? (S.session && S.session.currentZone) : zone;
+    const snap = snapOf(item);
+    if (z) {
+      item.zones = item.zones || {};
+      let v = (Number(item.zones[z]) || 0) + d;
+      if (v < 0) v = 0;
+      item.zones[z] = Math.round(v * 1000) / 1000;
+      if (item.unzoned == null) item.unzoned = 0;
+    } else {
+      let v = (Number(item.unzoned) || 0) + d;
+      if (v < 0) v = 0;
+      item.unzoned = Math.round(v * 1000) / 1000;
+    }
+    A.recount(item);
+    item.countedAt = Date.now();
+    S.undo.push(snap);
+    if (S.undo.length > 40) S.undo.shift();
+    A.touch('count');
+    return item.count;
   };
 
   A.undoLast = function () {
@@ -385,8 +472,15 @@
     if (!u) { A.toast('没有可撤销的操作', 'bad'); return; }
     const it = S.session && S.session.items.find((x) => x.id === u.itemId);
     if (!it) return;
-    it.count = u.prev;
-    it.countedAt = u.prev == null ? null : Date.now();
+    if (u.prevZones !== undefined) {
+      it.zones = JSON.parse(JSON.stringify(u.prevZones));
+      it.unzoned = u.prevUnzoned;
+      it.countedAt = u.prevCountedAt;
+      A.recount(it);
+    } else {
+      it.count = u.prev;
+      it.countedAt = u.prev == null ? null : Date.now();
+    }
     A.touch('count');
     A.toast('已撤销：' + (u.prev == null ? '恢复为未盘' : '数量改回 ' + A.fmt(u.prev)), 'ok');
   };
@@ -394,8 +488,10 @@
   A.addItem = function (data) {
     const it = Object.assign({
       id: A.uid('it'), name: '', spec: '', unit: '', code: '', barcodes: [],
-      loc: '', book: null, count: null, note: '', photo: null, manual: false, isNew: false,
+      loc: '', book: null, count: null, zones: {}, zonesDone: {}, unzoned: null,
+      note: '', photo: null, manual: false, isNew: false,
     }, data || {});
+    if (!it.zones) it.zones = {};
     it.barcodes = (it.barcodes || []).map(A.normCode).filter(Boolean);
     S.session.items.push(it);
     A.touch('items');
@@ -458,9 +554,82 @@
     return '已盘 ' + st.counted + '/' + st.total + (st.diff ? ' · 差异 ' + st.diff : '');
   };
 
+  /* ---------------- 区域（盘点片区） ---------------- */
+  A.isZoneCode = function (raw) {
+    return /^Z[A-Z]\d{2}[a-z]?$/.test(A.normCode(raw));
+  };
+  A.genZoneCode = function () {
+    const used = new Set(Object.keys((S.session && S.session.zoneMap) || {}));
+    for (let i = 1; i <= 2600; i++) {
+      const letter = String.fromCharCode(65 + Math.floor((i - 1) / 100));
+      const num = String(((i - 1) % 100) + 1).padStart(2, '0');
+      const code = 'Z' + letter + num;
+      if (!used.has(code)) return code;
+    }
+    return 'Z' + Date.now().toString(36).slice(-4).toUpperCase();
+  };
+  A.addZone = function (label) {
+    if (!S.session) return null;
+    const code = A.genZoneCode();
+    S.session.zoneMap[code] = (label || '').trim() || ('区域 ' + code.slice(1));
+    A.touch('zone');
+    return code;
+  };
+  A.renameZone = function (code, label) {
+    if (!S.session || !S.session.zoneMap[code]) return;
+    S.session.zoneMap[code] = (label || '').trim() || code;
+    A.touch('zone');
+  };
+  A.delZone = function (code) {
+    if (!S.session) return;
+    delete S.session.zoneMap[code];
+    delete (S.session.zoneDone || {})[code];
+    S.session.items.forEach(function (it) {
+      if (it.zones && it.zones[code] !== undefined) { delete it.zones[code]; A.recount(it); }
+      if (it.zonesDone) delete it.zonesDone[code];
+    });
+    if (S.session.currentZone === code) S.session.currentZone = null;
+    A.touch('zone');
+  };
+  A.setZone = function (code) {
+    if (!S.session) return;
+    const c = code ? A.normCode(code).toUpperCase() : null;
+    if (c && !S.session.zoneMap[c]) S.session.zoneMap[c] = '区域 ' + c.slice(1);
+    S.session.currentZone = c || null;
+    A.touch('zone');
+    return S.session.currentZone;
+  };
+  A.setZoneDone = function (code, done) {
+    if (!S.session) return;
+    S.session.zoneDone = S.session.zoneDone || {};
+    if (done) S.session.zoneDone[code] = true; else delete S.session.zoneDone[code];
+    A.touch('zone');
+  };
+  A.zoneSummary = function () {    const out = [];
+    const by = new Map();
+    const sess = S.session;
+    if (!sess) return out;
+    Object.keys(sess.zoneMap || {}).forEach(function (code) {
+      const z = { code: code, label: sess.zoneMap[code], count: 0, items: 0, done: !!(sess.zoneDone || {})[code] };
+      by.set(code, z); out.push(z);
+    });
+    sess.items.forEach(function (it) {
+      const zs = it.zones || {};
+      Object.keys(zs).forEach(function (code) {
+        const v = Number(zs[code]) || 0;
+        let z = by.get(code);
+        if (!z) { z = { code: code, label: code, count: 0, items: 0, done: false }; by.set(code, z); out.push(z); }
+        z.count += v;
+        if (v !== 0) z.items++;
+      });
+    });
+    return out;
+  };
+
   /* ---------------- 反馈 ---------------- */
   A.toast = function (msg, type, action) {
     const root = $('#toastRoot');
+    if (!root) return;
     const el = document.createElement('div');
     el.className = 'toast ' + (type || '');
     el.innerHTML = '<span>' + A.esc(msg) + '</span>';
@@ -504,6 +673,7 @@
     if (!S.settings.sound || !actx) return;
     try {
       if (kind === 'bad') { tone(220, 0.16, 0, 0.12); tone(165, 0.22, 0.14, 0.12); }
+      else if (kind === 'zone') { tone(660, 0.09, 0, 0.12); tone(990, 0.11, 0.09, 0.1); }
       else if (kind === 'ok') { tone(880, 0.07, 0, 0.12); tone(1320, 0.09, 0.06, 0.1); }
     } catch (e) {}
   };
@@ -513,7 +683,7 @@
   };
   A.feedback = function (kind) {
     A.beep(kind);
-    A.vibrate(kind === 'bad' ? [40, 60, 40] : 28);
+    A.vibrate(kind === 'bad' ? [40, 60, 40] : kind === 'zone' ? [18, 45, 18] : 28);
   };
 
   /* ---------------- 弹层 ---------------- */

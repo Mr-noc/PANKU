@@ -351,3 +351,29 @@ select.inp{padding-right:28px;appearance:none;background-image:linear-gradient(4
 .cam-start-hint{font-size:11.5px;color:var(--tx3);max-width:250px;line-height:1.6}
 .cam-warn{position:absolute;left:8px;right:8px;bottom:30px;z-index:3;display:flex;align-items:center;gap:8px;background:rgba(251,191,36,.14);border:1px solid rgba(251,191,36,.35);color:#f8dfa6;font-size:11.5px;border-radius:10px;padding:7px 10px;backdrop-filter:blur(6px)}
 .cam-warn button{color:#fbbf24;font-weight:700;font-size:11.5px;white-space:nowrap}
+
+/* ---------- 区域 / 半自动 / 微信提示 ---------- */
+.zone-bar{display:flex;gap:8px;align-items:center;flex:0 0 auto}
+.zone-pill{flex:1;min-width:0;height:38px;border-radius:12px;border:1px solid var(--line);background:var(--card);color:var(--tx2);font-size:12.5px;padding:0 12px;text-align:left;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.zone-pill.on{color:var(--acc);border-color:rgba(45,212,191,.45);background:var(--acc-soft);font-weight:700}
+.zone-done{height:38px;border-radius:12px;border:1px solid var(--line);background:var(--card);color:var(--tx3);font-size:12px;padding:0 12px;white-space:nowrap}
+.zone-done:disabled{opacity:.4}
+.zone-done.done{color:var(--ok);border-color:rgba(52,211,153,.4);background:rgba(52,211,153,.1)}
+.zone-tag{display:inline-block;padding:1px 7px;border-radius:7px;background:var(--acc-soft);color:var(--acc);font-size:11px;font-weight:700}
+.idle-zone{font-size:12px;color:var(--acc);margin:2px 0 8px;font-weight:600}
+.idle-zone.warn{color:var(--warn)}
+.semi-hint{position:absolute;left:0;right:0;top:50%;transform:translateY(-50%);text-align:center;font-size:13px;font-weight:700;color:rgba(233,240,247,.9);text-shadow:0 1px 8px #000;pointer-events:none}
+.wx-tip{display:flex;align-items:center;gap:8px;padding:8px 10px;border-radius:10px;background:rgba(251,191,36,.1);border:1px solid rgba(251,191,36,.3);font-size:11.5px;color:var(--warn);line-height:1.5}
+.wx-tip[hidden]{display:none}
+.wx-tip span{flex:1}
+.wx-tip button{background:transparent;border:1px solid rgba(251,191,36,.45);color:var(--warn);border-radius:8px;padding:3px 8px;font-size:11px;white-space:nowrap}
+
+/* 区域码打印 */
+.zone-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:12px;padding:12px}
+.zone-card{border:1px dashed #999;border-radius:8px;padding:10px;text-align:center;break-inside:avoid;background:#fff;color:#000}
+.zone-card .zc-t{font-size:14px;font-weight:700;margin-bottom:4px}
+.zone-card .zc-c{font-size:12px;margin-top:2px;letter-spacing:1px}
+.zone-card svg{max-width:100%;height:54px}
+@media print{
+  .zone-grid{grid-template-columns:repeat(3,1fr)}
+}

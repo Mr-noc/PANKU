@@ -62,7 +62,7 @@
     if (e.key === 'Enter') {
       if (kbBuf.length >= 4) {
         e.preventDefault();
-        if (A.handleScannedCode) A.handleScannedCode(kbBuf);
+        if (A.handleScannedCode) A.handleScannedCode(kbBuf, { force: true });
         kbBuf = '';
       }
       return;

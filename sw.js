@@ -1,8 +1,8 @@
-/* 盘库 APP — 离线缓存（网络优先，断网用缓存） */
-const CACHE = 'panku-v22';
+﻿/* 鐩樺簱 APP 鈥?绂荤嚎缂撳瓨锛堢綉缁滀紭鍏堬紝鏂綉鐢ㄧ紦瀛橈級 */
+const CACHE = 'panku-v23';
 const ASSETS = [
-  './', './index.html', './app.css?v=32', './manifest.webmanifest',
-  './js/core.js?v=32', './js/import.js?v=32', './js/scan.js?v=32', './js/views.js?v=32', './js/export.js?v=32', './js/merge.js?v=32', './js/main.js?v=32',
+  './', './index.html', './app.css?v=33', './manifest.webmanifest',
+  './js/core.js?v=33', './js/import.js?v=33', './js/scan.js?v=33', './js/views.js?v=33', './js/export.js?v=33', './js/merge.js?v=33', './js/main.js?v=33',
   './lib/xlsx.full.min.js', './lib/JsBarcode.all.min.js', './lib/zxing.min.js',
   './icons/icon-192.png', './icons/icon-512.png',
 ];
